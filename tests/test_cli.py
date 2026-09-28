@@ -77,7 +77,7 @@ def test_failed_service_is_reported_and_exits_non_zero(gitlab: respx.Router, tmp
     result: typing.Final = _invoke("collect", "-g", "team", "-o", str(output))
 
     assert result.exit_code == 1
-    assert "Error: team/broken: GitLab returned 400" in result.output
+    assert "Error: team/broken: GitLab returned 400 for deployments." in result.output
     assert [item["error"] is None for item in json.loads(output.read_text())["services"]] == [False, True]
 
 
@@ -89,7 +89,7 @@ def test_authentication_failure_exits_with_auth_code(httpx2_mock: respx.Router, 
     result: typing.Final = _invoke("collect", "-g", "team", "-o", str(output))
 
     assert result.exit_code == 3
-    assert "Error: GitLab rejected the token (403)" in result.output
+    assert "Error: GitLab denied access to group 'team' (403)" in result.output
     assert not output.exists()
 
 

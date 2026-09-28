@@ -24,7 +24,10 @@ uvx release-scope collect --group team/backend --output report.json --cache cach
 ```
 
 `--group` and `--project` are repeatable and can be mixed. The command exits `1` when any service failed to
-collect; the report is still written and names the error on that service.
+collect; the report is still written and names the error on that service. A service GitLab denies access to fails
+alone, and its error lists the project settings and member page to check. A project with CI/CD or Environments
+disabled is reported with a warning and no rows, without querying it. Only a rejected token, or a group or project
+passed on the command line that the token cannot see, stops the run.
 
 ## Configuration
 

@@ -1,5 +1,6 @@
 import typing
 
+import httpcore2
 import httpware
 import httpx
 import pydantic
@@ -156,10 +157,103 @@ def test_a_failing_service_keeps_its_cache_and_does_not_stop_the_others(gitlab: 
     report: typing.Final = _collect(next_cache)
 
     assert [(item.project, item.error) for item in report.services] == [
-        ("team/broken", "GitLab returned 500 for /api/v4/projects/2/deployments."),
-        ("team/svc", "GitLab returned 502 for /api/v4/projects/1/deployments."),
+        ("team/broken", "team/broken: GitLab returned 500 for deployments."),
+        ("team/svc", "team/svc: GitLab returned 502 for deployments."),
     ]
     assert next_cache.current.pipelines["1"] == cache.current.pipelines["1"]
+
+
+def test_forbidden_deployments_fail_only_that_service_and_say_where_to_look(gitlab: respx.Router) -> None:
+    gitlab["group"].respond(json=[SERVICE, project(2, "team/nodeploy")])
+    gitlab.get(f"{API}/projects/2/deployments").respond(403)
+    settings: typing.Final = f"{ENDPOINT}/team/nodeploy/edit#js-shared-permissions"
+
+    report: typing.Final = _collect()
+
+    assert [item.project for item in report.services] == ["team/nodeploy", "team/svc"]
+    assert report.services[0].error == (
+        "team/nodeploy: GitLab denied access to deployments (403). Check that:\n"
+        f"- Environments are enabled: {settings} → Visibility, project features, permissions → Environments\n"
+        f"- CI/CD is enabled: {settings} → Visibility, project features, permissions → CI/CD\n"
+        f"- the token's user has a role that can read them: {ENDPOINT}/team/nodeploy/-/project_members"
+    )
+    assert len(report.services[1].rows) == 5
+
+
+@pytest.mark.httpx2(assert_all_called=False)
+@pytest.mark.parametrize(
+    ("route", "resource", "feature", "enabled"),
+    [
+        ("commits", "the repository", "Repository", "Repository is enabled"),
+        ("merged_mrs", "merge requests", "Merge requests", "Merge requests are enabled"),
+        ("push_pipelines", "pipelines", "CI/CD", "CI/CD is enabled"),
+    ],
+)
+def test_forbidden_resource_lists_the_feature_that_guards_it(
+    gitlab: respx.Router, route: str, resource: str, feature: str, enabled: str
+) -> None:
+    gitlab[route].respond(403)
+    settings: typing.Final = f"{ENDPOINT}/team/svc/edit#js-shared-permissions"
+
+    error: typing.Final = _only_service(_collect()).error
+
+    assert error == (
+        f"team/svc: GitLab denied access to {resource} (403). Check that:\n"
+        f"- {enabled}: {settings} → Visibility, project features, permissions → {feature}\n"
+        f"- the token's user has a role that can read them: {ENDPOINT}/team/svc/-/project_members"
+    )
+
+
+@pytest.mark.httpx2(assert_all_called=False)
+def test_network_failure_names_the_project(gitlab: respx.Router) -> None:
+    gitlab["tags"].mock(side_effect=httpcore2.ConnectError("down"))
+
+    assert _only_service(_collect()).error == "team/svc: GitLab request for the repository failed (NetworkError)."
+
+
+_LIB_FEATURES: typing.Final = (
+    f"{ENDPOINT}/team/lib/edit#js-shared-permissions → Visibility, project features, permissions"
+)
+
+
+@pytest.mark.parametrize(
+    ("access_levels", "warning"),
+    [
+        (
+            {"environments_access_level": "disabled"},
+            f"Environments are disabled, so it has no deployments. Enable them at {_LIB_FEATURES} → Environments.",
+        ),
+        (
+            {"builds_access_level": "disabled"},
+            f"CI/CD is disabled, so it has no pipelines or deployments. Enable it at {_LIB_FEATURES} → CI/CD.",
+        ),
+    ],
+)
+def test_project_without_deployments_is_skipped_with_a_warning(
+    gitlab: respx.Router, access_levels: dict[str, str], warning: str
+) -> None:
+    gitlab["group"].respond(json=[SERVICE, project(2, "team/lib", **access_levels)])
+
+    report: typing.Final = _collect()
+
+    skipped: typing.Final = report.services[0]
+    assert (skipped.project, skipped.rows, skipped.error, skipped.warnings) == ("team/lib", [], None, [warning])
+    assert len(report.services[1].rows) == 5
+
+
+def test_enabled_or_private_features_are_collected(gitlab: respx.Router) -> None:
+    gitlab["group"].respond(
+        json=[project(1, "team/svc", environments_access_level="private", builds_access_level="enabled")]
+    )
+
+    assert len(_only_service(_collect()).rows) == 5
+
+
+def test_forbidden_group_stops_the_run(httpx2_mock: respx.Router) -> None:
+    httpx2_mock.get(f"{API}/groups/team/projects").respond(403)
+
+    with pytest.raises(AuthError, match=r"GitLab denied access to group 'team' \(403\)"):
+        _collect()
 
 
 def test_authentication_failure_stops_the_run(httpx2_mock: respx.Router) -> None:

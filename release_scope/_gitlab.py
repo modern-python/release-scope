@@ -2,7 +2,7 @@ import dataclasses
 import datetime
 import math
 import typing
-from urllib.parse import quote
+from urllib.parse import quote, unquote
 
 import httpware
 import pydantic
@@ -22,6 +22,8 @@ class Project(pydantic.BaseModel):
     path_with_namespace: str
     web_url: str
     default_branch: str | None = None
+    builds_access_level: str | None = None
+    environments_access_level: str | None = None
 
 
 class Deployable(pydantic.BaseModel):
@@ -134,13 +136,13 @@ class _Bridges(pydantic.RootModel[list[Bridge]]):
 
 
 def _translate(exc: httpware.ClientError, *, url: str) -> Exception:
-    if isinstance(exc, (httpware.UnauthorizedError, httpware.ForbiddenError)):
-        return AuthError(
-            f"GitLab rejected the token ({exc.response.status_code}) for {url}. It needs 'read_api' scope."
-        )
+    if isinstance(exc, httpware.UnauthorizedError):
+        return AuthError("GitLab rejected the token (401). Check that it is valid and not expired.")
     if isinstance(exc, httpware.StatusError):
-        return GitLabError(f"GitLab returned {exc.response.status_code} for {url}.")
-    return GitLabError(f"GitLab request {url} failed: {type(exc).__name__}.")
+        status: typing.Final = exc.response.status_code
+        return GitLabError(f"GitLab returned {status} for {unquote(url)}.", path=url, status=status)
+    reason: typing.Final = type(exc).__name__
+    return GitLabError(f"GitLab request {unquote(url)} failed: {reason}.", path=url, reason=reason)
 
 
 def _quote(value: str) -> str:
