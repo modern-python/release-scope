@@ -1,0 +1,272 @@
+import collections.abc
+import dataclasses
+import datetime
+import typing
+from urllib.parse import quote
+
+from release_scope._cache import Cache, CachedPipeline
+from release_scope._errors import GitLabError
+from release_scope._gitlab import Commit, Deployment, GitLabApi, MergeRequest, Pipeline, Project
+from release_scope._jira_keys import extract_jira_keys
+from release_scope._report import (
+    CommitRef,
+    EnvironmentState,
+    FailedJob,
+    JiraKeyRef,
+    MergeRequestRef,
+    PipelineState,
+    Report,
+    Row,
+    Service,
+    TagRef,
+)
+from release_scope._rows import RowDraft, group_rows, match_merge_requests
+from release_scope._settings import Settings
+
+
+_SETTLED_PIPELINE_STATUSES: typing.Final = frozenset({"success", "failed", "canceled", "skipped"})
+
+
+def _environment_state(name: str, deployment: Deployment) -> EnvironmentState:
+    return EnvironmentState(
+        name=name,
+        ref=deployment.ref,
+        sha=deployment.sha,
+        deployed_at=deployment.created_at,
+        deployment_url=deployment.deployable.web_url if deployment.deployable else None,
+    )
+
+
+def _merge_request_ref(merge_request: MergeRequest) -> MergeRequestRef:
+    author: typing.Final = merge_request.author
+    return MergeRequestRef(
+        iid=merge_request.iid,
+        title=merge_request.title,
+        url=merge_request.web_url,
+        author=(author.username or author.name) if author else None,
+        merged_at=merge_request.merged_at,
+    )
+
+
+def _commit_ref(commit: Commit) -> CommitRef:
+    return CommitRef(
+        sha=commit.id,
+        short_sha=commit.short_id,
+        title=commit.title,
+        url=commit.web_url,
+        author=commit.author_name,
+        committed_at=commit.committed_date,
+    )
+
+
+@dataclasses.dataclass(frozen=True, slots=True, kw_only=True)
+class CollectUseCase:
+    api: GitLabApi
+    settings: Settings
+
+    def __call__(
+        self,
+        *,
+        groups: collections.abc.Sequence[str],
+        projects: collections.abc.Sequence[str],
+        include_subgroups: bool,
+        cache: Cache,
+    ) -> Report:
+        services: typing.Final = []
+        for project in self._resolve_projects(groups=groups, projects=projects, include_subgroups=include_subgroups):
+            try:
+                services.append(self._collect_service(project, cache))
+            except GitLabError as exc:
+                cache.keep_project(project.id)
+                services.append(
+                    Service(project=project.path_with_namespace, project_url=project.web_url, error=str(exc))
+                )
+        return Report(
+            collected_at=datetime.datetime.now(datetime.UTC),
+            production_environment=self.settings.production_environment,
+            services=services,
+        )
+
+    def _resolve_projects(
+        self,
+        *,
+        groups: collections.abc.Sequence[str],
+        projects: collections.abc.Sequence[str],
+        include_subgroups: bool,
+    ) -> list[Project]:
+        resolved: dict[int, Project] = {}
+        for group in groups:
+            for project in self.api.list_group_projects(group, include_subgroups=include_subgroups):
+                resolved[project.id] = project
+        for path in projects:
+            project = self.api.get_project(path)
+            resolved[project.id] = project
+        return sorted(resolved.values(), key=lambda item: item.path_with_namespace)
+
+    def _collect_service(self, project: Project, cache: Cache) -> Service:
+        service: typing.Final = Service(
+            project=project.path_with_namespace, project_url=project.web_url, default_branch=project.default_branch
+        )
+        for name in self.settings.environments:
+            deployment = self.api.latest_deployment(project.id, name)
+            if deployment is not None:
+                service.environments.append(_environment_state(name, deployment))
+        production: typing.Final = next(
+            (item for item in service.environments if item.name == self.settings.production_environment), None
+        )
+        if project.default_branch is None:
+            service.warnings.append("Project has no default branch.")
+            return service
+        if production is None:
+            service.warnings.append(f"No successful deployment to '{self.settings.production_environment}'.")
+            return service
+
+        commits, truncated = self.api.list_first_parent_commits(
+            project.id, f"{production.sha}..{project.default_branch}", max_items=self.settings.max_commits
+        )
+        if truncated:
+            service.warnings.append(f"Stopped after {self.settings.max_commits} commits; older changes are omitted.")
+        if not commits:
+            return service
+
+        since: typing.Final = min(commit.committed_date for commit in commits)
+        drafts: typing.Final = group_rows(
+            commits, self._commit_merge_requests(project, project.default_branch, commits, since, cache)
+        )
+        tags, tags_truncated = self.api.list_tags(project.id)
+        if tags_truncated:
+            service.warnings.append("Tag list was truncated; some tags may be missing from rows.")
+        tags_by_sha: typing.Final[dict[str, list[str]]] = {}
+        for tag in tags:
+            tags_by_sha.setdefault(tag.commit.id, []).append(tag.name)
+        main_pipelines: typing.Final = self._latest_by_sha(
+            self.api.list_push_pipelines(project.id, ref=project.default_branch, updated_after=since)
+        )
+        service.rows.extend(
+            self._build_row(
+                project=project,
+                draft=draft,
+                tags_by_sha=tags_by_sha,
+                main_pipelines=main_pipelines,
+                environments=service.environments,
+                cache=cache,
+            )
+            for draft in drafts
+        )
+        return service
+
+    def _commit_merge_requests(
+        self, project: Project, default_branch: str, commits: list[Commit], since: datetime.datetime, cache: Cache
+    ) -> dict[str, list[MergeRequest]]:
+        merged: typing.Final = self.api.list_merged_merge_requests(
+            project.id, target_branch=default_branch, updated_after=since
+        )
+        matched: typing.Final = match_merge_requests(commits, merged)
+        for commit in commits:
+            if commit.id in matched:
+                continue
+            cached = cache.get_commit_merge_requests(project.id, commit.id)
+            if cached is None:
+                cached = [
+                    item
+                    for item in self.api.commit_merge_requests(project.id, commit.id)
+                    if item.state == "merged" and item.target_branch == default_branch
+                ]
+                cache.put_commit_merge_requests(project.id, commit.id, cached)
+            if cached:
+                matched[commit.id] = cached
+        return matched
+
+    @staticmethod
+    def _latest_by_sha(pipelines: list[Pipeline]) -> dict[str, Pipeline]:
+        latest: dict[str, Pipeline] = {}
+        for pipeline in pipelines:
+            if pipeline.sha not in latest or pipeline.id > latest[pipeline.sha].id:
+                latest[pipeline.sha] = pipeline
+        return latest
+
+    def _build_row(  # noqa: PLR0913
+        self,
+        *,
+        project: Project,
+        draft: RowDraft,
+        tags_by_sha: dict[str, list[str]],
+        main_pipelines: dict[str, Pipeline],
+        environments: list[EnvironmentState],
+        cache: Cache,
+    ) -> Row:
+        shas: typing.Final = {commit.id for commit in draft.commits}
+        if draft.merge_requests:
+            texts: list[str | None] = []
+            for merge_request in draft.merge_requests:
+                texts.extend((merge_request.title, merge_request.source_branch, merge_request.description))
+        else:
+            texts = [commit.message or commit.title for commit in draft.commits]
+        head_pipeline: typing.Final = main_pipelines.get(draft.commits[0].id)
+        return Row(
+            kind="merge_request" if draft.merge_requests else "commit",
+            tags=[
+                self._tag_ref(project, name, cache)
+                for commit in draft.commits
+                for name in tags_by_sha.get(commit.id, [])
+            ],
+            merge_requests=[_merge_request_ref(item) for item in draft.merge_requests],
+            commits=[_commit_ref(commit) for commit in draft.commits],
+            jira_keys=[
+                JiraKeyRef(key=key, url=self._jira_url(key))
+                for key in extract_jira_keys(texts, allowed_projects=self.settings.jira_project_keys)
+            ],
+            environments=[item.name for item in environments if item.sha in shas],
+            main_pipeline=self._pipeline_state(project, head_pipeline, cache) if head_pipeline else None,
+        )
+
+    def _tag_ref(self, project: Project, name: str, cache: Cache) -> TagRef:
+        pipeline: typing.Final = self.api.latest_pipeline(project.id, ref=name)
+        return TagRef(
+            name=name,
+            url=f"{project.web_url}/-/tags/{quote(name, safe='')}",
+            pipeline=self._pipeline_state(project, pipeline, cache) if pipeline else None,
+        )
+
+    def _jira_url(self, key: str) -> str | None:
+        if not self.settings.jira_endpoint:
+            return None
+        return f"{self.settings.jira_endpoint.rstrip('/')}/browse/{key}"
+
+    def _pipeline_state(self, project: Project, pipeline: Pipeline, cache: Cache) -> PipelineState:
+        failed_jobs = cache.get_failed_jobs(project.id, pipeline.id, pipeline.updated_at)
+        if failed_jobs is None:
+            failed_jobs = self._fetch_failed_jobs(project, pipeline)
+            if pipeline.status in _SETTLED_PIPELINE_STATUSES:
+                cache.put_failed_jobs(
+                    project.id, pipeline.id, CachedPipeline(updated_at=pipeline.updated_at, failed_jobs=failed_jobs)
+                )
+        return PipelineState(id=pipeline.id, status=pipeline.status, url=pipeline.web_url, failed_jobs=failed_jobs)
+
+    def _fetch_failed_jobs(self, project: Project, pipeline: Pipeline) -> list[FailedJob]:
+        failed: typing.Final = [
+            FailedJob(
+                kind="job",
+                name=job.name,
+                stage=job.stage,
+                status=job.status,
+                allow_failure=job.allow_failure,
+                url=job.web_url,
+                failure_reason=job.failure_reason,
+            )
+            for job in self.api.failed_jobs(project.id, pipeline.id)
+        ]
+        failed.extend(
+            FailedJob(
+                kind="bridge",
+                name=bridge.name,
+                stage=bridge.stage,
+                status=bridge.status,
+                allow_failure=bridge.allow_failure,
+                url=bridge.web_url,
+                failure_reason=bridge.failure_reason,
+                downstream_pipeline_url=bridge.downstream_pipeline.web_url if bridge.downstream_pipeline else None,
+            )
+            for bridge in self.api.failed_bridges(project.id, pipeline.id)
+        )
+        return failed
