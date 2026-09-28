@@ -29,11 +29,7 @@ modern_di_typer.setup_di(MAIN_APP, ioc.container)
 def _version_callback(value: bool) -> None:
     if not value:
         return
-    try:
-        version = importlib.metadata.version(_PACKAGE_NAME)
-    except importlib.metadata.PackageNotFoundError:
-        version = "0"
-    typer.echo(version)
+    typer.echo(importlib.metadata.version(_PACKAGE_NAME))
     raise typer.Exit
 
 

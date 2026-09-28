@@ -53,6 +53,8 @@ jobs:
       - run: uv venv
       - run: uv pip compile pyproject.toml --all-extras --no-deps --resolution lowest-direct -o floors.txt
       - run: uv pip install -r pyproject.toml --all-extras --group dev --constraints floors.txt --no-build
+      # `--version` reads the package metadata, which only an installed package has.
+      - run: uv pip install --no-deps -e .
       - run: uv run --no-sync pytest
 
   pytest:

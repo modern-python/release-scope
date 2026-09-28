@@ -16,8 +16,9 @@ issue title.
 ## Architecture
 
 `_use_case.py` drives one run; `_gitlab.py` is the only module that speaks HTTP; `_rows.py` is pure and turns the
-range plus merge requests into rows. Tests mock GitLab over HTTP with pytest-httpx2: the `gitlab` fixture registers
-one named route per endpoint from `tests/gitlab_mock.py`; extend those routes rather than mocking `GitLabApi`.
+range plus merge requests into rows. Tests mock GitLab only with respx routes (pytest-httpx2): the `gitlab` fixture in
+`tests/conftest.py` declares one named static route per call of the scenario in `tests/payloads.py`. A test changes
+a response by re-mocking a named route; add no fakes, callbacks, or stubs.
 
 The package must stay free of any company's hostnames, group paths, job names, or Jira project keys: every such value
 comes from settings. The repo is public.

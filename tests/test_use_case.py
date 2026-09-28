@@ -1,8 +1,10 @@
 import typing
 
 import httpware
+import httpx
 import pydantic
 import pytest
+import respx
 
 from release_scope._cache import Cache
 from release_scope._errors import AuthError, GitLabError
@@ -10,11 +12,7 @@ from release_scope._gitlab import GitLabApi
 from release_scope._report import Report, Service
 from release_scope._settings import GitLabConfig, Settings
 from release_scope._use_case import CollectUseCase
-from tests.conftest import GitLab
-from tests.gitlab_mock import API, ENDPOINT, ServiceData, commit, fail_everything, fail_service
-
-
-pytestmark = pytest.mark.httpx2(assert_all_called=False)
+from tests.payloads import API, COMMITS, ENDPOINT, PUSH_PIPELINES, SERVICE, commit, pipeline, project
 
 
 def _settings(**overrides: typing.Any) -> Settings:  # noqa: ANN401
@@ -125,36 +123,34 @@ def test_merge_request_author_falls_back_to_nothing() -> None:
     assert rows[3].merge_requests[0].author is None
 
 
-def test_second_run_reuses_settled_facts_from_the_cache(gitlab: GitLab) -> None:
+def test_second_run_reuses_settled_facts_from_the_cache(gitlab: respx.Router) -> None:
     cache: typing.Final = Cache()
     first: typing.Final = _collect(cache)
-    gitlab.router.reset()
 
     second: typing.Final = _collect(Cache(previous=cache.current))
 
-    jobs_requested: typing.Final = {call.request.url.path for call in gitlab.router["1:jobs"].calls}
-    assert gitlab.router["1:commit_mrs"].call_count == 0
-    assert jobs_requested == {"/api/v4/projects/1/pipelines/104/jobs"}
     assert second.services == first.services
+    assert [gitlab[f"commit_mrs:{sha}"].call_count for sha in ("head", "c0b", "c0a")] == [1, 1, 1]
+    assert [gitlab[f"jobs:{pipeline_id}"].call_count for pipeline_id in (104, 103, 102, 201)] == [2, 1, 1, 1]
 
 
-def test_cache_drops_a_pipeline_once_its_updated_at_moves(gitlab: GitLab) -> None:
+def test_cache_drops_a_pipeline_once_its_updated_at_moves(gitlab: respx.Router) -> None:
     cache: typing.Final = Cache()
     _collect(cache)
-    gitlab.service.push_pipelines[1]["updated_at"] = "2026-09-28T00:00:00Z"
-    gitlab.router.reset()
+    retried: typing.Final = pipeline(103, "c3", "main", "failed", updated_at="2026-09-28T00:00:00Z")
+    gitlab["push_pipelines"].respond(json=[PUSH_PIPELINES[0], retried, *PUSH_PIPELINES[2:]])
 
     _collect(Cache(previous=cache.current))
 
-    jobs_requested: typing.Final = {call.request.url.path for call in gitlab.router["1:jobs"].calls}
-    assert jobs_requested == {"/api/v4/projects/1/pipelines/103/jobs", "/api/v4/projects/1/pipelines/104/jobs"}
+    assert [gitlab[f"jobs:{pipeline_id}"].call_count for pipeline_id in (104, 103, 102)] == [2, 2, 1]
 
 
-def test_a_failing_service_keeps_its_cache_and_does_not_stop_the_others(gitlab: GitLab) -> None:
+def test_a_failing_service_keeps_its_cache_and_does_not_stop_the_others(gitlab: respx.Router) -> None:
     cache: typing.Final = Cache()
     _collect(cache)
-    gitlab.add_failing_service(ServiceData(id=2, path="team/broken"), 500)
-    fail_service(gitlab.router, gitlab.service, 502)
+    gitlab["group"].respond(json=[SERVICE, project(2, "team/broken")])
+    gitlab.get(f"{API}/projects/2/deployments").respond(500)
+    gitlab["deploy:production"].respond(502)
     next_cache: typing.Final = Cache(previous=cache.current)
 
     report: typing.Final = _collect(next_cache)
@@ -166,29 +162,31 @@ def test_a_failing_service_keeps_its_cache_and_does_not_stop_the_others(gitlab: 
     assert next_cache.current.pipelines["1"] == cache.current.pipelines["1"]
 
 
-def test_authentication_failure_stops_the_run(gitlab: GitLab) -> None:
-    fail_everything(gitlab.router, 401)
+def test_authentication_failure_stops_the_run(httpx2_mock: respx.Router) -> None:
+    httpx2_mock.get(f"{API}/groups/team/projects").respond(401)
 
     with pytest.raises(AuthError, match="401"):
         _collect()
 
 
-def test_unknown_project_stops_the_run(gitlab: GitLab) -> None:
-    gitlab.router.get(f"{API}/projects/team%2Fmissing").respond(404)
+def test_unknown_project_stops_the_run(httpx2_mock: respx.Router) -> None:
+    httpx2_mock.get(f"{API}/projects/team%2Fmissing").respond(404)
 
     with pytest.raises(GitLabError, match="404"):
         _collect(groups=(), projects=("team/missing",))
 
 
-@pytest.mark.usefixtures("gitlab")
-def test_project_listed_twice_is_collected_once() -> None:
+def test_project_listed_twice_is_collected_once(gitlab: respx.Router) -> None:
+    gitlab.get(f"{API}/projects/team%2Fsvc").respond(json=SERVICE)
+
     report: typing.Final = _collect(projects=("team/svc",))
 
     assert [item.project for item in report.services] == ["team/svc"]
 
 
-def test_service_without_production_deployment_has_no_rows(gitlab: GitLab) -> None:
-    del gitlab.service.deployments["production"]
+@pytest.mark.httpx2(assert_all_called=False)
+def test_service_without_production_deployment_has_no_rows(gitlab: respx.Router) -> None:
+    gitlab["deploy:production"].respond(json=[])
 
     service: typing.Final = _only_service(_collect())
 
@@ -196,8 +194,9 @@ def test_service_without_production_deployment_has_no_rows(gitlab: GitLab) -> No
     assert service.warnings == ["No successful deployment to 'production'."]
 
 
-def test_service_without_default_branch_has_no_rows(gitlab: GitLab) -> None:
-    gitlab.service.default_branch = None
+@pytest.mark.httpx2(assert_all_called=False)
+def test_service_without_default_branch_has_no_rows(gitlab: respx.Router) -> None:
+    gitlab["group"].respond(json=[project(1, "team/svc", default_branch=None)])
 
     service: typing.Final = _only_service(_collect())
 
@@ -205,8 +204,9 @@ def test_service_without_default_branch_has_no_rows(gitlab: GitLab) -> None:
     assert service.warnings == ["Project has no default branch."]
 
 
-def test_service_already_on_production_has_no_rows(gitlab: GitLab) -> None:
-    gitlab.service.commits = []
+@pytest.mark.httpx2(assert_all_called=False)
+def test_service_already_on_production_has_no_rows(gitlab: respx.Router) -> None:
+    gitlab["commits"].respond(json=[])
 
     service: typing.Final = _only_service(_collect())
 
@@ -214,34 +214,52 @@ def test_service_already_on_production_has_no_rows(gitlab: GitLab) -> None:
     assert service.warnings == []
 
 
-def test_long_range_is_truncated_with_a_warning(gitlab: GitLab) -> None:
-    gitlab.paging.per_page = 2
+def test_range_spanning_pages_is_read_to_the_end(gitlab: respx.Router) -> None:
+    gitlab["commits"].side_effect = [
+        httpx.Response(200, json=COMMITS[:3], headers={"x-next-page": "2"}),
+        httpx.Response(200, json=COMMITS[3:]),
+    ]
+
+    service: typing.Final = _only_service(_collect())
+
+    assert len(service.rows) == 5
+    assert [call.request.url.params["page"] for call in gitlab["commits"].calls] == ["1", "2"]
+
+
+@pytest.mark.httpx2(assert_all_called=False)
+def test_long_range_is_truncated_with_a_warning(gitlab: respx.Router) -> None:
+    gitlab["commits"].respond(json=COMMITS[:2], headers={"x-next-page": "2"})
 
     service: typing.Final = _only_service(_collect(max_commits=2))
 
     assert [row.commits[0].sha for row in service.rows] == ["head", "c3"]
     assert service.warnings == ["Stopped after 2 commits; older changes are omitted."]
+    assert gitlab["commits"].call_count == 1
 
 
-@pytest.mark.usefixtures("gitlab")
-def test_range_page_larger_than_the_limit_is_trimmed() -> None:
+@pytest.mark.httpx2(assert_all_called=False)
+def test_range_page_larger_than_the_limit_is_trimmed(gitlab: respx.Router) -> None:
     service: typing.Final = _only_service(_collect(max_commits=3))
 
     assert [row.commits[0].sha for row in service.rows] == ["head", "c3", "c2"]
     assert service.warnings == ["Stopped after 3 commits; older changes are omitted."]
+    assert gitlab["commits"].call_count == 1
 
 
-def test_long_tag_list_is_truncated_with_a_warning(gitlab: GitLab) -> None:
-    gitlab.paging.per_page = 1
-    gitlab.service.tags.extend({"name": f"0.0.{n}", "commit": {"id": f"old{n}"}} for n in range(100))
+@pytest.mark.httpx2(assert_all_called=False)
+def test_long_tag_list_is_truncated_with_a_warning(gitlab: respx.Router) -> None:
+    gitlab["tags"].respond(json=[{"name": "0.0.1", "commit": {"id": "old"}}], headers={"x-next-page": "2"})
 
     service: typing.Final = _only_service(_collect())
 
     assert service.warnings == ["Tag list was truncated; some tags may be missing from rows."]
+    assert gitlab["tags"].call_count == 50
 
 
-def test_commit_without_message_uses_its_title_for_jira_keys(gitlab: GitLab) -> None:
-    gitlab.service.commits[0] = commit("head", "SHOP-77 fix", date="2026-09-25T00:00:00Z", message="")
+def test_commit_without_message_uses_its_title_for_jira_keys(gitlab: respx.Router) -> None:
+    gitlab["commits"].respond(
+        json=[commit("head", "SHOP-77 fix", date="2026-09-25T00:00:00Z", message=""), *COMMITS[1:]]
+    )
 
     rows: typing.Final = _only_service(_collect()).rows
 
