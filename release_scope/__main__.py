@@ -109,7 +109,11 @@ def _render_command(
     except (OSError, pydantic.ValidationError) as exc:
         typer.echo(f"Error: Cannot read report {report_path}: {type(exc).__name__}.", err=True)
         raise typer.Exit(code=ConfigError.exit_code) from exc
-    write_text_atomic(output, render_markdown(report))
+    try:
+        write_text_atomic(output, render_markdown(report))
+    except OSError as exc:
+        typer.echo(f"Error: Cannot write page {output}: {type(exc).__name__}.", err=True)
+        raise typer.Exit(code=ReleaseScopeError.exit_code) from exc
     typer.echo(f"{len(report.services)} services -> {output}", err=True)
 
 

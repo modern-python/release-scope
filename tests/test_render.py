@@ -249,3 +249,26 @@ def test_single_change_and_single_merge_request_are_singular() -> None:
     assert "<summary>1 change since 2.3.0</summary>" in page
     assert "prod [2.3.0](https://g.test/d1) · preview 2.4.0 · 1 merge request" in page
     assert "| 1 change |" in page
+
+
+def test_service_with_rows_but_no_production_environment_still_renders() -> None:
+    orphan: typing.Final = _API.model_copy(update={"environments": [_environment("preview", "2.4.0")]})
+
+    page: typing.Final = render_markdown(_report(orphan))
+
+    assert "<summary>3 changes</summary>" in page
+    assert "preview 2.4.0 · 3 merge requests, 1 direct commit" in page
+
+
+def test_pipe_in_a_link_target_does_not_split_the_cell() -> None:
+    piped: typing.Final = _BILLING.model_copy(
+        update={"project": "acme/piped", "project_url": "https://g.test/a|b", "rows": _API.rows[:1]}
+    )
+
+    assert "[acme/piped](https://g.test/a%7Cb)" in render_markdown(_report(piped))
+
+
+def test_section_lists_production_first() -> None:
+    reordered: typing.Final = _API.model_copy(update={"environments": list(reversed(_API.environments))})
+
+    assert "prod [2.3.0](https://g.test/d1) · preview 2.4.0 · " in render_markdown(_report(reordered))

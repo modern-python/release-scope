@@ -180,3 +180,18 @@ def test_render_rejects_an_unreadable_report(tmp_path: pathlib.Path, content: st
     assert result.exit_code == 2
     assert f"Error: Cannot read report {report}: {reason}." in result.output
     assert not (tmp_path / "report.md").exists()
+
+
+def test_render_reports_a_page_it_cannot_write(tmp_path: pathlib.Path) -> None:
+    report: typing.Final = tmp_path / "report.json"
+    report.write_text(
+        '{"schema_version": 1, "collected_at": "2026-09-29T10:15:00Z", '
+        '"production_environment": "prod", "services": []}'
+    )
+    blocked: typing.Final = tmp_path / "report.md"
+    blocked.mkdir()
+
+    result: typing.Final = _invoke("render", str(report), "-o", str(blocked))
+
+    assert result.exit_code == 1
+    assert f"Error: Cannot write page {blocked}: IsADirectoryError." in result.output

@@ -21,20 +21,21 @@ _STATUS_ICONS: typing.Final = {
 }
 _LEGEND: typing.Final = "Legend: ✅ success · ❌ failed · 🔄 running · ⏭ canceled or skipped · ⚠️ needs attention"
 _ROW_HEADER: typing.Final = ("Tag", "Change", "Jira", "Deployed to", "Failed jobs")
+_FAILED, _SKIPPED, _PENDING = 0, 1, 2
 
 
-def _text(value: str) -> str:
+def _inline(value: str) -> str:
     return html.escape(value, quote=False).replace("|", "\\|").replace("[", "\\[").replace("]", "\\]")
 
 
 def _cell(value: str) -> str:
-    return _text(value).replace("\r\n", "<br>").replace("\n", "<br>")
+    return _inline(value).replace("\r\n", "<br>").replace("\n", "<br>")
 
 
 def _link(label: str, url: str | None) -> str:
     if not url:
         return label
-    return f"[{label}]({url.replace(' ', '%20').replace(')', '%29')})"
+    return f"[{label}]({url.replace(' ', '%20').replace(')', '%29').replace('|', '%7C')})"
 
 
 def _icon(status: str) -> str:
@@ -53,6 +54,18 @@ def _table(
     return lines
 
 
+def _collapsed(summary: str, body: list[str]) -> list[str]:
+    return ["<details>", f"<summary>{summary}</summary>", "", *body, "", "</details>", ""]
+
+
+def _state(service: Service) -> int | None:
+    if service.error:
+        return _FAILED
+    if service.rows:
+        return _PENDING
+    return _SKIPPED if service.warnings else None
+
+
 def _environment_names(report: Report) -> list[str]:
     names: dict[str, None] = {report.production_environment: None}
     for service in report.services:
@@ -60,13 +73,12 @@ def _environment_names(report: Report) -> list[str]:
     return list(names)
 
 
-def _deployed_ref(service: Service, name: str) -> str:
-    environment: typing.Final = next((item for item in service.environments if item.name == name), None)
-    return _environment_ref(environment) if environment else "—"
+def _environment(service: Service, name: str) -> EnvironmentState | None:
+    return next((item for item in service.environments if item.name == name), None)
 
 
-def _environment_ref(environment: EnvironmentState) -> str:
-    return _link(_cell(environment.ref), environment.deployment_url)
+def _environment_ref(environment: EnvironmentState | None) -> str:
+    return _link(_cell(environment.ref), environment.deployment_url) if environment else "—"
 
 
 def _blocking_failures(service: Service) -> int:
@@ -76,14 +88,11 @@ def _blocking_failures(service: Service) -> int:
     return sum(1 for pipeline in pipelines if pipeline for job in pipeline.failed_jobs if not job.allow_failure)
 
 
-def _needs_attention(service: Service) -> bool:
-    return bool(service.error or service.rows or service.warnings)
-
-
 def _pending(service: Service) -> str:
-    if service.error:
+    state: typing.Final = _state(service)
+    if state == _FAILED:
         return "❌ failed to collect"
-    if not service.rows:
+    if state == _SKIPPED:
         return "⚠️ see below"
     untagged: typing.Final = "" if service.rows[0].tags else " · untagged head"
     return f"{_plural(len(service.rows), 'change')}{untagged}"
@@ -93,7 +102,7 @@ def _summary_row(service: Service, environments: list[str]) -> list[str]:
     failures: typing.Final = _blocking_failures(service)
     return [
         _link(_cell(service.project), service.project_url),
-        *(_deployed_ref(service, name) for name in environments),
+        *(_environment_ref(_environment(service, name)) for name in environments),
         _pending(service),
         f"❌ {failures}" if failures else "",
     ]
@@ -123,20 +132,17 @@ def _tag(tag: TagRef) -> str:
     return f"{_link(_cell(tag.name), tag.pipeline.url)} {_icon(tag.pipeline.status)}"
 
 
-def _change(row: Row) -> str:
+def _reference(label: str, url: str | None, title: str, author: str | None) -> str:
+    return f"{_link(label, url)} {_cell(title)}" + (f" · {_cell(author)}" if author else "")
+
+
+def _merge_requests_or_commits(row: Row) -> str:
     if row.merge_requests:
         return "<br>".join(
-            _link(f"!{item.iid}", item.url)
-            + f" {_cell(item.title)}"
-            + (f" · @{_cell(item.author)}" if item.author else "")
+            _reference(f"!{item.iid}", item.url, item.title, f"@{item.author}" if item.author else None)
             for item in row.merge_requests
         )
-    return "<br>".join(
-        _link(f"`{item.short_sha}`", item.url)
-        + f" {_cell(item.title)}"
-        + (f" · {_cell(item.author)}" if item.author else "")
-        for item in row.commits
-    )
+    return "<br>".join(_reference(f"`{item.short_sha}`", item.url, item.title, item.author) for item in row.commits)
 
 
 def _failed_jobs(row: Row) -> str:
@@ -150,55 +156,59 @@ def _failed_jobs(row: Row) -> str:
 def _row(row: Row) -> list[str]:
     return [
         "<br>".join(_tag(tag) for tag in row.tags),
-        _change(row),
+        _merge_requests_or_commits(row),
         ", ".join(_link(_cell(key.key), key.url) for key in row.jira_keys),
         ", ".join(_cell(name) for name in row.environments),
         _failed_jobs(row),
     ]
 
 
-def _service_section(service: Service, production: str) -> list[str]:
-    lines: typing.Final = [f"## {_text(service.project)}", ""]
-    if service.error:
-        lines.extend([f"❌ {_text(service.error)}", ""])
-    lines.extend(line for warning in service.warnings for line in (f"⚠️ {_text(warning)}", ""))
-    if not service.rows:
-        return lines
+def _counts(service: Service) -> str:
     merge_requests: typing.Final = len({item.iid for row in service.rows for item in row.merge_requests})
     commits: typing.Final = sum(1 for row in service.rows if row.kind == "commit")
-    counts: typing.Final = [
+    return ", ".join(
         text
         for count, text in (
             (merge_requests, _plural(merge_requests, "merge request")),
             (commits, _plural(commits, "direct commit")),
         )
         if count
-    ]
-    environments: typing.Final = [f"{_cell(item.name)} {_environment_ref(item)}" for item in service.environments]
-    baseline: typing.Final = next(item.ref for item in service.environments if item.name == production)
-    lines.extend(
-        [
-            " · ".join([*environments, ", ".join(counts)]),
-            "",
-            "<details>",
-            f"<summary>{_plural(len(service.rows), 'change')} since {_text(baseline)}</summary>",
-            "",
-            *_table(_ROW_HEADER, (_row(row) for row in service.rows)),
-            "",
-            "</details>",
-            "",
-        ]
     )
+
+
+def _rows_section(service: Service, production: str) -> list[str]:
+    ordered: typing.Final = sorted(service.environments, key=lambda item: item.name != production)
+    environments: typing.Final = [f"{_cell(item.name)} {_environment_ref(item)}" for item in ordered]
+    production_state: typing.Final = _environment(service, production)
+    since: typing.Final = f" since {_inline(production_state.ref)}" if production_state else ""
+    return [
+        " · ".join([*environments, _counts(service)]),
+        "",
+        *_collapsed(
+            f"{_plural(len(service.rows), 'change')}{since}",
+            _table(_ROW_HEADER, (_row(row) for row in service.rows)),
+        ),
+    ]
+
+
+def _service_section(service: Service, production: str) -> list[str]:
+    lines: typing.Final = [f"## {_inline(service.project)}", ""]
+    if service.error:
+        lines.extend([f"❌ {_inline(service.error)}", ""])
+    lines.extend(line for warning in service.warnings for line in (f"⚠️ {_inline(warning)}", ""))
+    if service.rows:
+        lines.extend(_rows_section(service, production))
     return lines
 
 
 def render_markdown(report: Report) -> str:
+    production: typing.Final = report.production_environment
     collected: typing.Final = report.collected_at.astimezone(datetime.UTC).strftime("%Y-%m-%d %H:%M")
     lines: typing.Final = [
         "# Release scope",
         "",
         (
-            f"Collected {collected} UTC. Changes run from the commit on `{_text(report.production_environment)}` "
+            f"Collected {collected} UTC. Changes run from the commit on `{_inline(production)}` "
             "to the head of the default branch."
         ),
         "",
@@ -210,42 +220,29 @@ def render_markdown(report: Report) -> str:
         return "\n".join(lines) + "\n"
 
     attention: typing.Final = sorted(
-        (service for service in report.services if _needs_attention(service)),
-        key=lambda service: (0 if service.error else 1 if not service.rows else 2, service.project),
+        (service for service in report.services if _state(service) is not None),
+        key=lambda service: (_state(service), service.project),
     )
-    up_to_date: typing.Final = [service for service in report.services if not _needs_attention(service)]
+    up_to_date: typing.Final = [service for service in report.services if _state(service) is None]
     environments: typing.Final = _environment_names(report)
     if attention:
-        lines.extend(
-            [
-                *_table(
-                    ["Service", *(_cell(name) for name in environments), "Pending", "Failed jobs"],
-                    (_summary_row(service, environments) for service in attention),
-                ),
-                "",
-            ]
-        )
+        header: typing.Final = ["Service", *(_cell(name) for name in environments), "Pending", "Failed jobs"]
+        lines.extend([*_table(header, (_summary_row(service, environments) for service in attention)), ""])
     else:
         lines.extend(["All services are up to date.", ""])
     if up_to_date:
-        production: typing.Final = report.production_environment
         lines.extend(
-            [
-                "<details>",
-                f"<summary>{_plural(len(up_to_date), 'service')} up to date</summary>",
-                "",
-                *_table(
+            _collapsed(
+                f"{_plural(len(up_to_date), 'service')} up to date",
+                _table(
                     ["Service", _cell(production)],
                     (
-                        [_link(_cell(item.project), item.project_url), _deployed_ref(item, production)]
+                        [_link(_cell(item.project), item.project_url), _environment_ref(_environment(item, production))]
                         for item in up_to_date
                     ),
                 ),
-                "",
-                "</details>",
-                "",
-            ]
+            )
         )
     for service in attention:
-        lines.extend(_service_section(service, report.production_environment))
+        lines.extend(_service_section(service, production))
     return "\n".join(lines).rstrip("\n") + "\n"
