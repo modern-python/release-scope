@@ -1,0 +1,105 @@
+[project]
+name = "release-scope"
+description = "Collect what sits between production and the default branch across GitLab services: tags, MRs, Jira keys, failed jobs"
+authors = [{ name = "Artur Shiriev", email = "me@shiriev.ru" }]
+requires-python = ">=3.11,<4"
+license = "MIT"
+readme = "README.md"
+keywords = ["release", "gitlab", "jira", "deployments", "merge-requests", "ci", "cli", "python"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: Free Threading :: 2 - Beta",
+    "Typing :: Typed",
+    "Topic :: Software Development :: Build Tools",
+]
+version = "0"
+dependencies = [
+    "typer>=0.13",
+    # The first release whose pydantic-core ships a wheel for each interpreter.
+    "pydantic>=2; python_version < '3.12'",
+    "pydantic>=2.0.2; python_version == '3.12'",
+    "pydantic>=2.8.2; python_version == '3.13'",
+    "pydantic>=2.12; python_version >= '3.14'",
+    "pydantic-settings>=2",
+    "modern-di-typer>=3,<4",
+    "httpx2>=2",
+    "httpware[pydantic]>=0.15.0",
+]
+
+[project.scripts]
+release-scope = "release_scope.__main__:main"
+
+[project.urls]
+Homepage = "https://modern-python.org"
+Repository = "https://github.com/modern-python/release-scope"
+Issues = "https://github.com/modern-python/release-scope/issues"
+Changelog = "https://github.com/modern-python/release-scope/releases"
+
+[build-system]
+requires = ["uv_build>=0.11,<1"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "release_scope"
+module-root = ""
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "pytest-cov>=5",
+    "pytest-xdist>=3",
+    "pytest-randomly>=3",
+    "pytest-httpx2>=1",
+    "respx>=0.23.1",
+    "httpx>=0.28.1",
+    "httpcore2>=2",
+]
+lint = [
+    "ruff",
+    "ty",
+    "eof-fixer",
+]
+
+[tool.ruff]
+fix = true
+unsafe-fixes = true
+line-length = 120
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = [
+    "D1",     # docstrings are not forced; a docstring exists when it says something
+    "D203",   # conflicts with D211
+    "D213",   # conflicts with D212
+    "COM812", # conflicts with the formatter
+    "ISC001", # conflicts with the formatter
+    "CPY001", # no per-file copyright header
+    "FBT",    # boolean positional arguments are fine
+    "TCH",    # imports stay real; TYPE_CHECKING-only imports break runtime introspection
+    "S105",   # token names in env-var constants and test fixtures, not secrets
+]
+isort.lines-after-imports = 2
+isort.no-lines-before = ["standard-library", "local-folder"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = [
+    "S101",    # assert is the test idiom; in library code it is a finding
+    "PLR2004", # expected ids and exit codes read clearer inline than as named constants
+]
+
+[tool.pytest.ini_options]
+addopts = ""
+testpaths = ["tests"]
+# pytest-httpx2 defines this marker in a hook its package never exports, so pytest does not see it.
+markers = ["httpx2: configure the httpx2_mock fixture"]
+
+[tool.coverage.report]
+fail_under = 100
+exclude_also = [
+    "if typing.TYPE_CHECKING:",
+]
