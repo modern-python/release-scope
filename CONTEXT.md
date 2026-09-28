@@ -11,8 +11,7 @@ selected, deployable or not.
 
 **Production baseline**:
 The commit of the latest successful deployment to the production environment. The range starts there, not at a
-tag: see [ADR-0002](docs/adr/0002-range-starts-at-the-deployed-sha.md). Avoid "current version", which suggests a
-tag.
+tag. Avoid "current version", which suggests a tag.
 
 **Range**:
 The first-parent commits of the default branch that the production baseline does not contain, newest first.
@@ -29,5 +28,4 @@ latest pipeline whose ref is a tag in the row.
 A job or bridge whose status is `failed`, including those with `allow_failure`; the flag is reported, not filtered.
 
 **Settled fact**:
-Data GitLab will not change for the same key, and so the only data the cache may hold: see
-[ADR-0001](docs/adr/0001-cache-holds-only-settled-facts.md).
+Data GitLab will not change for the same key, and so the only data the cache may hold.

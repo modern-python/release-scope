@@ -17,8 +17,6 @@ Single-context repo:
 /
 ├── CONTEXT.md
 ├── docs/adr/
-│   ├── 0001-cache-holds-only-settled-facts.md
-│   └── 0002-range-starts-at-the-deployed-sha.md
 └── release_scope/
 ```
 
@@ -32,4 +30,4 @@ If the concept you need isn't in the glossary yet, that's a signal: either you'r
 
 If your output contradicts an existing ADR, surface it explicitly rather than silently overriding:
 
-> _Contradicts ADR-0001 (the cache holds only settled facts), but worth reopening because…_
+> _Contradicts ADR-NNNN (<decision>), but worth reopening because…_
