@@ -12,7 +12,7 @@ from typer.testing import CliRunner
 from release_scope import ioc
 from release_scope.__main__ import MAIN_APP
 from tests.conftest import GitLab
-from tests.gitlab_mock import ENDPOINT, ServiceData, fail_everything, requested_paths
+from tests.gitlab_mock import ENDPOINT, ServiceData, fail_everything
 
 
 pytestmark = pytest.mark.httpx2(assert_all_called=False)
@@ -56,7 +56,10 @@ def test_collect_writes_report_and_cache(gitlab: GitLab, tmp_path: pathlib.Path)
     gitlab.router.reset()
     second: typing.Final = _invoke("collect", "-g", "team", "-o", str(output), "--cache", str(cache))
     assert second.exit_code == 0, second.output
-    assert "/api/v4/projects/1/pipelines/103/jobs" not in requested_paths(gitlab.router)
+    assert gitlab.router["1:commit_mrs"].call_count == 0
+    assert {call.request.url.path for call in gitlab.router["1:jobs"].calls} == {
+        "/api/v4/projects/1/pipelines/104/jobs"
+    }
 
 
 @pytest.mark.usefixtures("cli_env")

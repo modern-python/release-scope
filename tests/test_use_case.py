@@ -11,7 +11,7 @@ from release_scope._report import Report, Service
 from release_scope._settings import GitLabConfig, Settings
 from release_scope._use_case import CollectUseCase
 from tests.conftest import GitLab
-from tests.gitlab_mock import API, ENDPOINT, ServiceData, commit, fail_everything, fail_service, requested_paths
+from tests.gitlab_mock import API, ENDPOINT, ServiceData, commit, fail_everything, fail_service
 
 
 pytestmark = pytest.mark.httpx2(assert_all_called=False)
@@ -132,10 +132,9 @@ def test_second_run_reuses_settled_facts_from_the_cache(gitlab: GitLab) -> None:
 
     second: typing.Final = _collect(Cache(previous=cache.current))
 
-    paths: typing.Final = requested_paths(gitlab.router)
-    assert not any(path.endswith("/merge_requests") and "/commits/" in path for path in paths)
-    assert "/api/v4/projects/1/pipelines/104/jobs" in paths
-    assert "/api/v4/projects/1/pipelines/103/jobs" not in paths
+    jobs_requested: typing.Final = {call.request.url.path for call in gitlab.router["1:jobs"].calls}
+    assert gitlab.router["1:commit_mrs"].call_count == 0
+    assert jobs_requested == {"/api/v4/projects/1/pipelines/104/jobs"}
     assert second.services == first.services
 
 
@@ -147,7 +146,8 @@ def test_cache_drops_a_pipeline_once_its_updated_at_moves(gitlab: GitLab) -> Non
 
     _collect(Cache(previous=cache.current))
 
-    assert "/api/v4/projects/1/pipelines/103/jobs" in requested_paths(gitlab.router)
+    jobs_requested: typing.Final = {call.request.url.path for call in gitlab.router["1:jobs"].calls}
+    assert jobs_requested == {"/api/v4/projects/1/pipelines/103/jobs", "/api/v4/projects/1/pipelines/104/jobs"}
 
 
 def test_a_failing_service_keeps_its_cache_and_does_not_stop_the_others(gitlab: GitLab) -> None:

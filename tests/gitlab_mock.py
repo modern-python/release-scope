@@ -168,7 +168,3 @@ def fail_service(router: respx.Router, data: ServiceData, status: int) -> None:
 def fail_everything(router: respx.Router, status: int) -> None:
     for route in router.routes:
         route.mock(side_effect=None, return_value=httpx.Response(status, json={"message": "nope"}))
-
-
-def requested_paths(router: respx.Router) -> list[str]:
-    return [call.request.url.path for call in router.calls]
