@@ -1,13 +1,15 @@
 import collections.abc
 import dataclasses
 import datetime
+import http
 import typing
 from urllib.parse import quote
 
 from release_scope._cache import Cache, CachedPipeline
-from release_scope._errors import GitLabError
+from release_scope._errors import AuthError, GitLabError
 from release_scope._gitlab import Commit, Deployment, GitLabApi, MergeRequest, Pipeline, Project
 from release_scope._jira_keys import extract_jira_keys
+from release_scope._messages import explain_failure, skip_reason
 from release_scope._report import (
     CommitRef,
     EnvironmentState,
@@ -25,6 +27,15 @@ from release_scope._settings import Settings
 
 
 _SETTLED_PIPELINE_STATUSES: typing.Final = frozenset({"success", "failed", "canceled", "skipped"})
+
+
+def _resolution_error(error: GitLabError, target: str) -> Exception:
+    if error.status == http.HTTPStatus.FORBIDDEN:
+        return AuthError(
+            f"GitLab denied access to {target} (403). "
+            "Check that the token has the 'read_api' scope and that its user can see it."
+        )
+    return error
 
 
 def _environment_state(name: str, deployment: Deployment) -> EnvironmentState:
@@ -79,7 +90,11 @@ class CollectUseCase:
             except GitLabError as exc:
                 cache.keep_project(project.id)
                 services.append(
-                    Service(project=project.path_with_namespace, project_url=project.web_url, error=str(exc))
+                    Service(
+                        project=project.path_with_namespace,
+                        project_url=project.web_url,
+                        error=explain_failure(project, exc),
+                    )
                 )
         return Report(
             collected_at=datetime.datetime.now(datetime.UTC),
@@ -96,10 +111,16 @@ class CollectUseCase:
     ) -> list[Project]:
         resolved: dict[int, Project] = {}
         for group in groups:
-            for project in self.api.list_group_projects(group, include_subgroups=include_subgroups):
-                resolved[project.id] = project
+            try:
+                listed = self.api.list_group_projects(group, include_subgroups=include_subgroups)
+            except GitLabError as exc:
+                raise _resolution_error(exc, f"group '{group}'") from exc
+            resolved.update((project.id, project) for project in listed)
         for path in projects:
-            project = self.api.get_project(path)
+            try:
+                project = self.api.get_project(path)
+            except GitLabError as exc:
+                raise _resolution_error(exc, f"project '{path}'") from exc
             resolved[project.id] = project
         return sorted(resolved.values(), key=lambda item: item.path_with_namespace)
 
@@ -107,6 +128,10 @@ class CollectUseCase:
         service: typing.Final = Service(
             project=project.path_with_namespace, project_url=project.web_url, default_branch=project.default_branch
         )
+        reason: typing.Final = skip_reason(project)
+        if reason is not None:
+            service.warnings.append(reason)
+            return service
         for name in self.settings.environments:
             deployment = self.api.latest_deployment(project.id, name)
             if deployment is not None:

@@ -91,7 +91,7 @@ def _collect_command(  # noqa: PLR0913, PLR0917
     rows: typing.Final = sum(len(service.rows) for service in report.services)
     typer.echo(f"{len(report.services)} services, {rows} rows, {len(failed)} failed -> {output}", err=True)
     for service in failed:
-        typer.echo(f"Error: {service.project}: {service.error}", err=True)
+        typer.echo(f"Error: {service.error}", err=True)
     if failed:
         raise typer.Exit(code=1)
 

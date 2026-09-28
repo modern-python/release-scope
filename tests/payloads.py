@@ -6,12 +6,19 @@ API: typing.Final = f"{ENDPOINT}/api/v4"
 SERVICE_API: typing.Final = f"{API}/projects/1"
 
 
-def project(project_id: int, path: str, *, default_branch: str | None = "main") -> dict[str, typing.Any]:
+def project(
+    project_id: int,
+    path: str,
+    *,
+    default_branch: str | None = "main",
+    **fields: typing.Any,  # noqa: ANN401
+) -> dict[str, typing.Any]:
     return {
         "id": project_id,
         "path_with_namespace": path,
         "web_url": f"{ENDPOINT}/{path}",
         "default_branch": default_branch,
+        **fields,
     }
 
 

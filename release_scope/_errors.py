@@ -15,3 +15,9 @@ class AuthError(ReleaseScopeError):
 
 class GitLabError(ReleaseScopeError):
     exit_code: typing.ClassVar[int] = 4
+
+    def __init__(self, message: str, *, resource: str, status: int | None = None, reason: str = "") -> None:
+        super().__init__(message)
+        self.resource = resource
+        self.status = status
+        self.reason = reason
