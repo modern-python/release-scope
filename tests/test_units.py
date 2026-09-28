@@ -1,10 +1,11 @@
 import pathlib
 import typing
 
+import httpcore2
 import httpware
-import httpx2
 import pydantic
 import pytest
+import respx
 
 from release_scope import ioc
 from release_scope._cache import Cache, CacheData, CachedPipeline
@@ -102,14 +103,9 @@ def test_keep_project_merges_old_and_new_entries() -> None:
     assert cache.current.commit_merge_requests["3"] == {}
 
 
-def test_transport_failure_becomes_gitlab_error() -> None:
-    def broken(request: httpx2.Request) -> httpx2.Response:
-        msg = "down"
-        raise httpx2.ConnectError(msg, request=request)
-
-    api: typing.Final = GitLabApi(
-        http=httpware.Client(httpx2_client=httpx2.Client(transport=httpx2.MockTransport(broken), base_url="http://x"))
-    )
+def test_transport_failure_becomes_gitlab_error(httpx2_mock: respx.Router) -> None:
+    httpx2_mock.route(host="gitlab.test").mock(side_effect=httpcore2.ConnectError("down"))
+    api: typing.Final = GitLabApi(http=httpware.Client(base_url="https://gitlab.test"))
 
     with pytest.raises(GitLabError, match="failed: NetworkError"):
         api.get_project("team/svc")

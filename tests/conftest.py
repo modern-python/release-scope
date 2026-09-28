@@ -1,8 +1,21 @@
+import dataclasses
 import typing
 
 import pytest
+import respx
 
-from tests.fake_gitlab import ENDPOINT, FakeGitLab, FakeProject, commit, job, merge_request, pipeline
+from tests.gitlab_mock import (
+    ENDPOINT,
+    Paging,
+    ServiceData,
+    commit,
+    fail_service,
+    job,
+    merge_request,
+    mock_group,
+    mock_service,
+    pipeline,
+)
 
 
 _SETTINGS_ENV: typing.Final = (
@@ -24,8 +37,8 @@ def _isolate_env(monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv(name, raising=False)
 
 
-def build_service_project() -> FakeProject:
-    return FakeProject(
+def build_service() -> ServiceData:
+    return ServiceData(
         id=1,
         path="team/svc",
         deployments={
@@ -85,6 +98,24 @@ def build_service_project() -> FakeProject:
     )
 
 
+@dataclasses.dataclass(kw_only=True)
+class GitLab:
+    router: respx.Router
+    service: ServiceData
+    group: list[ServiceData]
+    paging: Paging
+
+    def add_failing_service(self, data: ServiceData, status: int) -> None:
+        self.group.append(data)
+        mock_service(self.router, data, self.paging)
+        fail_service(self.router, data, status)
+
+
 @pytest.fixture
-def fake_gitlab() -> FakeGitLab:
-    return FakeGitLab(projects=[build_service_project()], groups={"team": [1]})
+def gitlab(httpx2_mock: respx.Router) -> GitLab:
+    paging: typing.Final = Paging()
+    service: typing.Final = build_service()
+    group: typing.Final = [service]
+    mock_group(httpx2_mock, "team", group, paging)
+    mock_service(httpx2_mock, service, paging)
+    return GitLab(router=httpx2_mock, service=service, group=group, paging=paging)

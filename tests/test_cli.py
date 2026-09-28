@@ -11,10 +11,19 @@ from typer.testing import CliRunner
 
 from release_scope import ioc
 from release_scope.__main__ import MAIN_APP
-from tests.fake_gitlab import ENDPOINT, FakeGitLab, FakeProject
+from tests.conftest import GitLab
+from tests.gitlab_mock import ENDPOINT, ServiceData, fail_everything, requested_paths
 
+
+pytestmark = pytest.mark.httpx2(assert_all_called=False)
 
 _RUNNER: typing.Final = CliRunner()
+
+
+@pytest.fixture(autouse=True)
+def _open_container() -> collections.abc.Iterator[None]:
+    with ioc.container:
+        yield
 
 
 @pytest.fixture
@@ -24,20 +33,12 @@ def cli_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("RELEASE_SCOPE_ENVIRONMENTS", '["preview"]')
 
 
-@pytest.fixture
-def use_fake(fake_gitlab: FakeGitLab) -> collections.abc.Iterator[FakeGitLab]:
-    with ioc.container:
-        ioc.container.override(ioc.ClientsGroup.gitlab_client, fake_gitlab.client())
-        yield fake_gitlab
-        ioc.container.reset_override(ioc.ClientsGroup.gitlab_client)
-
-
 def _invoke(*args: str) -> typing.Any:  # noqa: ANN401
     return _RUNNER.invoke(MAIN_APP, list(args))
 
 
 @pytest.mark.usefixtures("cli_env")
-def test_collect_writes_report_and_cache(use_fake: FakeGitLab, tmp_path: pathlib.Path) -> None:
+def test_collect_writes_report_and_cache(gitlab: GitLab, tmp_path: pathlib.Path) -> None:
     output: typing.Final = tmp_path / "out" / "report.json"
     cache: typing.Final = tmp_path / "cache.json"
 
@@ -50,15 +51,16 @@ def test_collect_writes_report_and_cache(use_fake: FakeGitLab, tmp_path: pathlib
     assert [len(item["rows"]) for item in report["services"]] == [5]
     assert "1 services, 5 rows, 0 failed" in first.output
     assert json.loads(cache.read_text())["pipelines"]["1"]
+    assert {call.request.headers["PRIVATE-TOKEN"] for call in gitlab.router.calls} == {"glpat-test"}
 
-    use_fake.requests.clear()
+    gitlab.router.reset()
     second: typing.Final = _invoke("collect", "-g", "team", "-o", str(output), "--cache", str(cache))
     assert second.exit_code == 0, second.output
-    assert "/api/v4/projects/1/pipelines/103/jobs" not in use_fake.paths()
+    assert "/api/v4/projects/1/pipelines/103/jobs" not in requested_paths(gitlab.router)
 
 
 @pytest.mark.usefixtures("cli_env")
-def test_unreadable_cache_is_ignored_with_a_warning(use_fake: FakeGitLab, tmp_path: pathlib.Path) -> None:
+def test_unreadable_cache_is_ignored_with_a_warning(gitlab: GitLab, tmp_path: pathlib.Path) -> None:
     cache: typing.Final = tmp_path / "cache.json"
     cache.write_text('{"schema_version": 99}')
 
@@ -67,25 +69,24 @@ def test_unreadable_cache_is_ignored_with_a_warning(use_fake: FakeGitLab, tmp_pa
     assert result.exit_code == 0, result.output
     assert f"Warning: Ignoring unreadable cache {cache}: ValidationError." in result.output
     assert json.loads(cache.read_text())["schema_version"] == 1
-    assert use_fake.requests
+    assert gitlab.router.calls
 
 
 @pytest.mark.usefixtures("cli_env")
-def test_failed_service_is_reported_and_exits_non_zero(use_fake: FakeGitLab, tmp_path: pathlib.Path) -> None:
-    use_fake.projects.append(FakeProject(id=2, path="team/broken", fail_with=500))
-    use_fake.groups["team"].append(2)
+def test_failed_service_is_reported_and_exits_non_zero(gitlab: GitLab, tmp_path: pathlib.Path) -> None:
+    gitlab.add_failing_service(ServiceData(id=2, path="team/broken"), 400)
     output: typing.Final = tmp_path / "report.json"
 
     result: typing.Final = _invoke("collect", "-g", "team", "-o", str(output))
 
     assert result.exit_code == 1
-    assert "Error: team/broken: GitLab returned 500" in result.output
+    assert "Error: team/broken: GitLab returned 400" in result.output
     assert [item["error"] is None for item in json.loads(output.read_text())["services"]] == [False, True]
 
 
 @pytest.mark.usefixtures("cli_env")
-def test_authentication_failure_exits_with_auth_code(use_fake: FakeGitLab, tmp_path: pathlib.Path) -> None:
-    use_fake.status_override = 403
+def test_authentication_failure_exits_with_auth_code(gitlab: GitLab, tmp_path: pathlib.Path) -> None:
+    fail_everything(gitlab.router, 403)
     output: typing.Final = tmp_path / "report.json"
 
     result: typing.Final = _invoke("collect", "-g", "team", "-o", str(output))

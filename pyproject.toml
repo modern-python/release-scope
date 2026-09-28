@@ -54,6 +54,7 @@ dev = [
     "pytest-cov>=5",
     "pytest-xdist>=3",
     "pytest-randomly>=3",
+    "pytest-httpx2>=1",
 ]
 lint = [
     "ruff",
@@ -91,6 +92,8 @@ isort.no-lines-before = ["standard-library", "local-folder"]
 [tool.pytest.ini_options]
 addopts = ""
 testpaths = ["tests"]
+# pytest-httpx2 defines this marker in a hook its package never exports, so pytest does not see it.
+markers = ["httpx2: configure the httpx2_mock fixture"]
 
 [tool.coverage.report]
 fail_under = 100
