@@ -145,3 +145,38 @@ def test_module_entry_point_runs_the_app(monkeypatch: pytest.MonkeyPatch) -> Non
         runpy.run_module("release_scope", run_name="__main__")
 
     assert exc_info.value.code == 0
+
+
+def test_render_writes_markdown_from_a_report(tmp_path: pathlib.Path) -> None:
+    report: typing.Final = tmp_path / "report.json"
+    report.write_text(
+        '{"schema_version": 1, "collected_at": "2026-09-29T10:15:00Z", '
+        '"production_environment": "prod", "services": []}'
+    )
+    page: typing.Final = tmp_path / "out" / "report.md"
+
+    result: typing.Final = _invoke("render", str(report), "--output", str(page))
+
+    assert result.exit_code == 0, result.output
+    assert page.read_text().startswith("# Release scope\n")
+    assert f"-> {page}" in result.output
+
+
+@pytest.mark.parametrize(
+    ("content", "reason"),
+    [
+        (None, "FileNotFoundError"),
+        ('{"schema_version": 2}', "ValidationError"),
+        ("not json", "ValidationError"),
+    ],
+)
+def test_render_rejects_an_unreadable_report(tmp_path: pathlib.Path, content: str | None, reason: str) -> None:
+    report: typing.Final = tmp_path / "report.json"
+    if content is not None:
+        report.write_text(content)
+
+    result: typing.Final = _invoke("render", str(report), "-o", str(tmp_path / "report.md"))
+
+    assert result.exit_code == 2
+    assert f"Error: Cannot read report {report}: {reason}." in result.output
+    assert not (tmp_path / "report.md").exists()
