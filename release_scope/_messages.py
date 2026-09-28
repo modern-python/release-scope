@@ -1,12 +1,10 @@
-import re
+import http
 import typing
 
 from release_scope._errors import GitLabError
 from release_scope._gitlab import Project
 
 
-_FORBIDDEN: typing.Final = 403
-_PROJECT_RESOURCE: typing.Final = re.compile(r"/projects/[^/]+/([^/?]+)")
 _RESOURCES: typing.Final[dict[str, tuple[str, tuple[str, ...]]]] = {
     "deployments": ("deployments", ("Environments", "CI/CD")),
     "pipelines": ("pipelines", ("CI/CD",)),
@@ -20,17 +18,12 @@ def _feature_setting(project: Project, feature: str) -> str:
     return f"{project.web_url}/edit#js-shared-permissions → Visibility, project features, permissions → {feature}"
 
 
-def _resource(path: str) -> tuple[str, tuple[str, ...]]:
-    match: typing.Final = _PROJECT_RESOURCE.search(path)
-    return _RESOURCES.get(match.group(1), ("project data", ())) if match else ("project data", ())
-
-
 def explain_failure(project: Project, error: GitLabError) -> str:
     name: typing.Final = project.path_with_namespace
-    resource, features = _resource(error.path)
+    resource, features = _RESOURCES.get(error.resource, ("project data", ()))
     if error.status is None:
         return f"{name}: GitLab request for {resource} failed ({error.reason})."
-    if error.status != _FORBIDDEN:
+    if error.status != http.HTTPStatus.FORBIDDEN:
         return f"{name}: GitLab returned {error.status} for {resource}."
     checks: typing.Final = [
         f"- {feature} {'are' if feature in _PLURAL_FEATURES else 'is'} enabled: {_feature_setting(project, feature)}"

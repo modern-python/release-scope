@@ -1,6 +1,7 @@
 import collections.abc
 import dataclasses
 import datetime
+import http
 import typing
 from urllib.parse import quote
 
@@ -25,12 +26,11 @@ from release_scope._rows import RowDraft, group_rows, match_merge_requests
 from release_scope._settings import Settings
 
 
-_FORBIDDEN: typing.Final = 403
 _SETTLED_PIPELINE_STATUSES: typing.Final = frozenset({"success", "failed", "canceled", "skipped"})
 
 
 def _resolution_error(error: GitLabError, target: str) -> Exception:
-    if error.status == _FORBIDDEN:
+    if error.status == http.HTTPStatus.FORBIDDEN:
         return AuthError(
             f"GitLab denied access to {target} (403). "
             "Check that the token has the 'read_api' scope and that its user can see it."

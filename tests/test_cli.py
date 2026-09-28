@@ -82,6 +82,28 @@ def test_failed_service_is_reported_and_exits_non_zero(gitlab: respx.Router, tmp
 
 
 @pytest.mark.usefixtures("cli_env")
+def test_forbidden_service_fails_alone_and_exits_non_zero(gitlab: respx.Router, tmp_path: pathlib.Path) -> None:
+    gitlab["group"].respond(json=[SERVICE, project(2, "team/nodeploy")])
+    gitlab.get(f"{API}/projects/2/deployments").respond(403)
+
+    result: typing.Final = _invoke("collect", "-g", "team", "-o", str(tmp_path / "report.json"))
+
+    assert result.exit_code == 1
+    assert "Error: team/nodeploy: GitLab denied access to deployments (403). Check that:" in result.output
+    assert "1 failed" in result.output
+
+
+@pytest.mark.usefixtures("cli_env")
+def test_rejected_token_exits_with_auth_code(httpx2_mock: respx.Router, tmp_path: pathlib.Path) -> None:
+    httpx2_mock.get(f"{API}/groups/team/projects").respond(401)
+
+    result: typing.Final = _invoke("collect", "-g", "team", "-o", str(tmp_path / "report.json"))
+
+    assert result.exit_code == 3
+    assert "Error: GitLab rejected the token (401)." in result.output
+
+
+@pytest.mark.usefixtures("cli_env")
 def test_authentication_failure_exits_with_auth_code(httpx2_mock: respx.Router, tmp_path: pathlib.Path) -> None:
     httpx2_mock.get(f"{API}/groups/team/projects").respond(403)
     output: typing.Final = tmp_path / "report.json"

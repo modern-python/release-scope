@@ -205,6 +205,23 @@ def test_forbidden_resource_lists_the_feature_that_guards_it(
 
 
 @pytest.mark.httpx2(assert_all_called=False)
+def test_forbidden_commit_lookup_points_at_merge_requests(gitlab: respx.Router) -> None:
+    gitlab["commit_mrs:head"].respond(403)
+
+    error: typing.Final = _only_service(_collect()).error
+
+    assert error is not None
+    assert error.startswith("team/svc: GitLab denied access to merge requests (403). Check that:\n- Merge requests are")
+
+
+def test_forbidden_project_stops_the_run(httpx2_mock: respx.Router) -> None:
+    httpx2_mock.get(f"{API}/projects/team%2Fsecret").respond(403)
+
+    with pytest.raises(AuthError, match=r"GitLab denied access to project 'team/secret' \(403\)"):
+        _collect(groups=(), projects=("team/secret",))
+
+
+@pytest.mark.httpx2(assert_all_called=False)
 def test_network_failure_names_the_project(gitlab: respx.Router) -> None:
     gitlab["tags"].mock(side_effect=httpcore2.ConnectError("down"))
 
