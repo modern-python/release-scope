@@ -145,7 +145,7 @@ def test_page_lists_attention_first_and_collapses_up_to_date_services() -> None:
         "",
         "Collected 2026-09-29 10:15 UTC. Changes run from the commit on `prod` to the head of the default branch.",
         "",
-        "Legend: ✅ success · ❌ failed · 🔄 running · ⏭ canceled or skipped · ⚠️ needs attention",
+        "Legend: ✅ success · ❌ failed · 🔄 running · ⏭ canceled or skipped · ⚠️ warning or allowed failure",
         "",
         "| Service | prod | preview | Pending | Failed jobs |",
         "|---|---|---|---|---|",

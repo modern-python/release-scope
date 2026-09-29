@@ -19,7 +19,9 @@ _STATUS_ICONS: typing.Final = {
     "skipped": "⏭",
     "manual": "⏭",
 }
-_LEGEND: typing.Final = "Legend: ✅ success · ❌ failed · 🔄 running · ⏭ canceled or skipped · ⚠️ needs attention"
+_LEGEND: typing.Final = (
+    "Legend: ✅ success · ❌ failed · 🔄 running · ⏭ canceled or skipped · ⚠️ warning or allowed failure"
+)
 _ROW_HEADER: typing.Final = ("Tag", "Change", "Jira", "Deployed to", "Failed jobs")
 _FAILED, _SKIPPED, _PENDING = 0, 1, 2
 
@@ -44,6 +46,10 @@ def _icon(status: str) -> str:
 
 def _plural(count: int, noun: str) -> str:
     return f"{count} {noun}" if count == 1 else f"{count} {noun}s"
+
+
+def _nonzero(separator: str, parts: collections.abc.Iterable[tuple[int, str]]) -> str:
+    return separator.join(text for count, text in parts if count)
 
 
 def _table(
@@ -88,9 +94,7 @@ def _failure_counts(service: Service) -> str:
     jobs: typing.Final = [job for pipeline in pipelines if pipeline for job in pipeline.failed_jobs]
     allowed: typing.Final = sum(1 for job in jobs if job.allow_failure)
     blocking: typing.Final = len(jobs) - allowed
-    return " · ".join(
-        text for count, text in ((blocking, f"❌ {blocking}"), (allowed, f"⚠️ {allowed} allowed")) if count
-    )
+    return _nonzero(" · ", [(blocking, f"❌ {blocking}"), (allowed, f"⚠️ {allowed} allowed")])
 
 
 def _pending(service: Service) -> str:
@@ -170,13 +174,8 @@ def _row(row: Row) -> list[str]:
 def _counts(service: Service) -> str:
     merge_requests: typing.Final = len({item.iid for row in service.rows for item in row.merge_requests})
     commits: typing.Final = sum(1 for row in service.rows if row.kind == "commit")
-    return ", ".join(
-        text
-        for count, text in (
-            (merge_requests, _plural(merge_requests, "merge request")),
-            (commits, _plural(commits, "direct commit")),
-        )
-        if count
+    return _nonzero(
+        ", ", [(merge_requests, _plural(merge_requests, "merge request")), (commits, _plural(commits, "direct commit"))]
     )
 
 
