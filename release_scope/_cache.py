@@ -11,6 +11,8 @@ from release_scope._report import FailedJob
 
 CACHE_SCHEMA_VERSION: typing.Final = 1
 
+_EntryT = typing.TypeVar("_EntryT")
+
 
 class CachedPipeline(pydantic.BaseModel):
     updated_at: str
@@ -21,12 +23,14 @@ class CacheData(pydantic.BaseModel):
     schema_version: typing.Literal[1] = CACHE_SCHEMA_VERSION
     commit_merge_requests: dict[str, dict[str, list[MergeRequest]]] = pydantic.Field(default_factory=dict)
     pipelines: dict[str, dict[str, CachedPipeline]] = pydantic.Field(default_factory=dict)
+    merge_requests: dict[str, dict[str, MergeRequest]] = pydantic.Field(default_factory=dict)
 
 
 @dataclasses.dataclass(slots=True, kw_only=True)
 class Cache:
     previous: CacheData = dataclasses.field(default_factory=CacheData)
     current: CacheData = dataclasses.field(default_factory=CacheData)
+    visited: set[str] = dataclasses.field(default_factory=set)
 
     @classmethod
     def load(cls, path: pathlib.Path) -> tuple["Cache", str | None]:
@@ -38,7 +42,30 @@ class Cache:
             return cls(), f"Ignoring unreadable cache {path}: {type(exc).__name__}."
 
     def save(self, path: pathlib.Path) -> None:
-        write_text_atomic(path, self.current.model_dump_json(indent=2))
+        write_text_atomic(path, self.pruned().model_dump_json(indent=2))
+
+    def visit(self, project_id: int) -> None:
+        self.visited.add(str(project_id))
+
+    def pruned(self) -> CacheData:
+        return CacheData(
+            commit_merge_requests=self._unvisited(self.previous.commit_merge_requests)
+            | self.current.commit_merge_requests,
+            pipelines=self._unvisited(self.previous.pipelines) | self.current.pipelines,
+            merge_requests=self._unvisited(self.previous.merge_requests) | self.current.merge_requests,
+        )
+
+    def _unvisited(self, entries: dict[str, _EntryT]) -> dict[str, _EntryT]:
+        return {project: entry for project, entry in entries.items() if project not in self.visited}
+
+    def get_merge_request(self, project_id: int, iid: int) -> MergeRequest | None:
+        cached = self.previous.merge_requests.get(str(project_id), {}).get(str(iid))
+        if cached is not None:
+            self.put_merge_request(project_id, cached)
+        return cached
+
+    def put_merge_request(self, project_id: int, merge_request: MergeRequest) -> None:
+        self.current.merge_requests.setdefault(str(project_id), {})[str(merge_request.iid)] = merge_request
 
     def get_commit_merge_requests(self, project_id: int, sha: str) -> list[MergeRequest] | None:
         cached = self.previous.commit_merge_requests.get(str(project_id), {}).get(sha)
@@ -68,4 +95,8 @@ class Cache:
         self.current.pipelines[key] = {
             **self.previous.pipelines.get(key, {}),
             **self.current.pipelines.get(key, {}),
+        }
+        self.current.merge_requests[key] = {
+            **self.previous.merge_requests.get(key, {}),
+            **self.current.merge_requests.get(key, {}),
         }

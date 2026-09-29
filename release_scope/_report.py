@@ -61,6 +61,7 @@ class Row(pydantic.BaseModel):
     jira_keys: list[JiraKeyRef]
     environments: list[str]
     main_pipeline: PipelineState | None
+    linked: bool = False
 
 
 class EnvironmentState(pydantic.BaseModel):
@@ -71,6 +72,12 @@ class EnvironmentState(pydantic.BaseModel):
     deployment_url: str | None
 
 
+class Release(pydantic.BaseModel):
+    state: typing.Literal["pending", "in_production", "not_merged", "not_found"]
+    tag: TagRef | None = None
+    pending_merge_requests: list[MergeRequestRef] = pydantic.Field(default_factory=list)
+
+
 class Service(pydantic.BaseModel):
     project: str
     project_url: str
@@ -79,6 +86,7 @@ class Service(pydantic.BaseModel):
     rows: list[Row] = pydantic.Field(default_factory=list)
     warnings: list[str] = pydantic.Field(default_factory=list)
     error: str | None = None
+    release: Release | None = None
 
 
 class LinkedChange(pydantic.BaseModel):
@@ -96,6 +104,7 @@ class JiraIssue(pydantic.BaseModel):
     status: str
     status_category: str | None
     issue_type: str | None
+    url: str | None = None
     links: list[LinkedChange] = pydantic.Field(default_factory=list)
 
 
@@ -111,3 +120,4 @@ class Report(pydantic.BaseModel):
     production_environment: str
     services: list[Service]
     jira: JiraState | None = None
+    jira_scope: list[str] = pydantic.Field(default_factory=list)

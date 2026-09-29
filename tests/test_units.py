@@ -10,10 +10,11 @@ import respx
 from release_scope import ioc
 from release_scope._cache import Cache, CacheData, CachedPipeline
 from release_scope._errors import ConfigError, GitLabError
-from release_scope._gitlab import GitLabApi
+from release_scope._gitlab import GitLabApi, MergeRequest
 from release_scope._jira_keys import extract_jira_keys
 from release_scope._links import parse_gitlab_link
 from release_scope._settings import GitLabConfig, Settings, load_settings
+from tests.payloads import merge_request
 
 
 @pytest.mark.parametrize(
@@ -88,15 +89,35 @@ def test_missing_cache_starts_empty(tmp_path: pathlib.Path) -> None:
     assert loaded.previous == CacheData()
 
 
-def test_cache_keeps_only_entries_used_by_the_run() -> None:
+def test_cache_prunes_only_the_projects_the_run_visited() -> None:
     previous: typing.Final = CacheData()
-    previous.pipelines["1"] = {"5": CachedPipeline(updated_at="u", failed_jobs=[])}
+    previous.pipelines["1"] = {
+        "5": CachedPipeline(updated_at="u", failed_jobs=[]),
+        "7": CachedPipeline(updated_at="u", failed_jobs=[]),
+    }
     previous.pipelines["2"] = {"6": CachedPipeline(updated_at="u", failed_jobs=[])}
+    previous.merge_requests["2"] = {"4": MergeRequest.model_validate(merge_request(4, "Kept"))}
     cache: typing.Final = Cache(previous=previous)
 
+    cache.visit(1)
     cache.get_failed_jobs(1, 5, "u")
+    pruned: typing.Final = cache.pruned()
 
-    assert set(cache.current.pipelines) == {"1"}
+    assert {project: set(entries) for project, entries in pruned.pipelines.items()} == {"1": {"5"}, "2": {"6"}}
+    assert set(pruned.merge_requests["2"]) == {"4"}
+
+
+def test_cache_holds_merged_merge_requests() -> None:
+    previous: typing.Final = CacheData()
+    previous.merge_requests["1"] = {"4": MergeRequest.model_validate(merge_request(4, "Done"))}
+    cache: typing.Final = Cache(previous=previous)
+
+    cached: typing.Final = cache.get_merge_request(1, 4)
+
+    assert cached is not None
+    assert cached.title == "Done"
+    assert cache.get_merge_request(1, 5) is None
+    assert set(cache.current.merge_requests["1"]) == {"4"}
 
 
 def test_keep_project_merges_old_and_new_entries() -> None:
@@ -110,6 +131,7 @@ def test_keep_project_merges_old_and_new_entries() -> None:
 
     assert set(cache.current.pipelines["1"]) == {"5", "6"}
     assert cache.current.commit_merge_requests["3"] == {}
+    assert cache.current.merge_requests["3"] == {}
 
 
 def test_transport_failure_becomes_gitlab_error(httpx2_mock: respx.Router) -> None:

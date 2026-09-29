@@ -10,6 +10,7 @@ from release_scope import ioc
 from release_scope._cache import Cache
 from release_scope._errors import ConfigError, ReleaseScopeError
 from release_scope._files import write_text_atomic
+from release_scope._jira_keys import JIRA_KEY_PATTERN
 from release_scope._render import render_markdown
 from release_scope._report import SCHEMA_VERSION, Report
 from release_scope._settings import Settings, load_settings
@@ -70,19 +71,25 @@ def _collect_command(  # noqa: PLR0913, PLR0917
         pathlib.Path | None,
         typer.Option("--cache", help="Cache JSON; read if present, rewritten in place after the run."),
     ] = None,
+    jira: typing.Annotated[
+        list[str] | None,
+        typer.Option("--jira", "-j", help="Jira issue key; collect only the services it links to. Repeatable."),
+    ] = None,
 ) -> None:
     try:
-        if not group and not project:
-            msg = "Pass at least one --group or --project."
-            raise ConfigError(msg)
+        _check_selection(groups=group or [], projects=project or [], keys=jira or [])
         settings = load_settings({})
         modern_di_typer.fetch_di_container(ctx).set_context(Settings, settings)
         cache, cache_warning = Cache.load(cache_path) if cache_path else (Cache(), None)
         if cache_warning:
             typer.echo(f"Warning: {cache_warning}", err=True)
-        report = _resolve_use_case(ctx=ctx)(
-            groups=group or [], projects=project or [], include_subgroups=include_subgroups, cache=cache
-        )
+        use_case = _resolve_use_case(ctx=ctx)
+        if jira:
+            report = use_case.for_issues(keys=list(dict.fromkeys(jira)), cache=cache)
+        else:
+            report = use_case(
+                groups=group or [], projects=project or [], include_subgroups=include_subgroups, cache=cache
+            )
     except ReleaseScopeError as err:
         typer.echo(f"Error: {err}", err=True)
         raise typer.Exit(code=err.exit_code) from err
@@ -95,11 +102,35 @@ def _collect_command(  # noqa: PLR0913, PLR0917
     typer.echo(f"{len(report.services)} services, {rows} rows, {len(failed)} failed -> {output}", err=True)
     for service in failed:
         typer.echo(f"Error: {service.error}", err=True)
-    jira_error: typing.Final = report.jira.error if report.jira else None
-    if jira_error:
-        typer.echo(f"Error: {jira_error}", err=True)
-    if failed or jira_error:
+    jira_errors: typing.Final = _jira_errors(report)
+    for message in jira_errors:
+        typer.echo(f"Error: {message}", err=True)
+    if failed or jira_errors:
         raise typer.Exit(code=1)
+
+
+def _check_selection(
+    *, groups: typing.Sequence[str], projects: typing.Sequence[str], keys: typing.Sequence[str]
+) -> None:
+    if keys and (groups or projects):
+        msg = "Pass either --jira or --group/--project, not both."
+        raise ConfigError(msg)
+    if not keys and not groups and not projects:
+        msg = "Pass --jira, or at least one --group or --project."
+        raise ConfigError(msg)
+    for key in keys:
+        if not JIRA_KEY_PATTERN.fullmatch(key):
+            msg = f"Not a Jira issue key: {key}."
+            raise ConfigError(msg)
+
+
+def _jira_errors(report: Report) -> list[str]:
+    if report.jira is None:
+        return []
+    errors: typing.Final = [f"Jira has no issue {key}." for key in report.jira_scope if key in report.jira.missing]
+    if report.jira.error:
+        errors.append(report.jira.error)
+    return errors
 
 
 @MAIN_APP.command("render", help="Render a JSON report as a Markdown page for a GitLab wiki.")

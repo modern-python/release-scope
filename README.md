@@ -33,6 +33,21 @@ disabled is reported with a warning and no rows, without querying it. Only a rej
 passed on the command line that the token cannot see, stops the run. A failed Jira search is recorded in the report
 and also exits `1`; the GitLab part is still written.
 
+## Jira issues
+
+`--jira` scopes the report to Jira issues instead of groups or projects, and needs the Jira settings:
+
+```sh
+uvx release-scope collect --jira SHOP-140 --jira SHOP-141 --output report.json --cache cache.json
+```
+
+It reads the issues and their GitLab links, then collects every project they link to. In each project the rows run
+from the production baseline up to the latest linked change, so they show everything that ships with the issues. The service
+records the release state: `pending` with the nearest tag at or above that change (or none, when a new tag is
+needed), `in_production` when every linked merge request is already deployed, `not_merged` when only open merge
+requests link to it, or `not_found`. Open merge requests and merges into other branches are listed either way.
+`--jira` is repeatable and cannot be combined with `--group` or `--project`; an issue Jira does not return exits `1`.
+
 ## Configuration
 
 Every setting is an environment variable; nothing about a GitLab or Jira instance is built in.
@@ -82,8 +97,9 @@ The page opens with a table of the services that have pending changes or problem
 services already up to date collapse into one expandable table. Each service with changes then has a collapsible table
 of its rows: the tag linked to its pipeline, the merge requests or direct commit, Jira keys with summary and status,
 the other services its Jira issues link to, where the change is deployed, and the failed jobs of its main-branch
-and tag pipelines. With Jira issues, the
-summary table also counts the issues per service whose status is not done.
+and tag pipelines. With Jira issues, the summary table also counts the issues per service whose status is not done.
+A `--jira` report names its issues at the top, shows the tag to release per service, and marks the rows linked to
+the issues.
 
 Chain the two commands with `;`, not `&&`: `collect` exits `1` when a service failed, which is exactly when the page
 should show it. Alert on the exit code of `collect`, not on whether to render. `render` fails only when it cannot
@@ -92,7 +108,8 @@ read the report or write the page.
 ## Cache
 
 `--cache` names a JSON file that is read if present and rewritten atomically after the run. It holds only facts
-that do not change once settled: which merge requests a commit belongs to, and the failed jobs of a finished
-pipeline keyed by its `updated_at`, so a retried job invalidates the entry. Entries the run did not use are
-dropped. A missing, corrupt, or older-schema cache is ignored with a warning; the cache only saves requests and
-never changes the report.
+that do not change once settled: which merge requests a commit belongs to, a merged merge request, and the failed
+jobs of a finished pipeline keyed by its `updated_at`, so a retried job invalidates the entry. Within each project
+the run collected, entries it did not use are dropped; other projects keep theirs, so one cache file serves both
+group and `--jira` runs. A missing, corrupt, or older-schema cache is ignored with a warning; the cache only saves
+requests and never changes the report.

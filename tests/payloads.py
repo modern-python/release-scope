@@ -195,3 +195,6 @@ JIRA_REMOTE_LINKS: typing.Final = {
         remote_link("https://gitlab.other.test/team/api/-/merge_requests/1"),
     ],
 }
+
+
+LINKED_MERGE_REQUEST: typing.Final = merge_request(12, "SHOP-12 new endpoint", merge_commit_sha="c3", sha="x12")

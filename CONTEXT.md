@@ -35,5 +35,15 @@ names differently.
 A GitLab project that a Jira issue's Web links point to through a merge request or commit, other than the service
 the row belongs to. It need not be in the report.
 
+**Issue scope**:
+The Jira issues a `--jira` run was given. Its services are the projects those issues link to.
+
+**Target**:
+In an issue scope, the newest row on the default branch whose merge request or commit an issue links to. Rows run
+from the production baseline to the target.
+
+**Release tag**:
+The nearest tag at or above the target: the earliest tag that ships it. Absent when a new tag is needed.
+
 **Settled fact**:
 Data GitLab will not change for the same key, and so the only data the cache may hold.

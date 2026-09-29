@@ -6,7 +6,7 @@ import typing
 from urllib.parse import quote
 
 from release_scope._cache import Cache, CachedPipeline
-from release_scope._errors import AuthError, GitLabError, JiraError
+from release_scope._errors import AuthError, ConfigError, GitLabError, JiraError
 from release_scope._gitlab import Commit, Deployment, GitLabApi, MergeRequest, Pipeline, Project
 from release_scope._jira import JiraApi
 from release_scope._jira_keys import extract_jira_keys
@@ -22,6 +22,7 @@ from release_scope._report import (
     LinkedChange,
     MergeRequestRef,
     PipelineState,
+    Release,
     Report,
     Row,
     Service,
@@ -75,6 +76,31 @@ def _commit_ref(commit: Commit) -> CommitRef:
     )
 
 
+def _row_keys(services: list[Service]) -> list[str]:
+    return sorted({key.key for service in services for row in service.rows for key in row.jira_keys})
+
+
+@dataclasses.dataclass(slots=True, kw_only=True)
+class _Walk:
+    truncated: bool
+    drafts: list[RowDraft] = dataclasses.field(default_factory=list)
+    tags_by_sha: dict[str, list[str]] = dataclasses.field(default_factory=dict)
+    main_pipelines: dict[str, Pipeline] = dataclasses.field(default_factory=dict)
+
+
+@dataclasses.dataclass(frozen=True, slots=True, kw_only=True)
+class _LinkTarget:
+    merged: set[int]
+    shas: list[str]
+    pending: list[MergeRequestRef]
+    warnings: list[str]
+
+    def matches(self, draft: RowDraft) -> bool:
+        return any(item.iid in self.merged for item in draft.merge_requests) or any(
+            commit.id.startswith(sha) for commit in draft.commits for sha in self.shas
+        )
+
+
 @dataclasses.dataclass(frozen=True, slots=True, kw_only=True)
 class CollectUseCase:
     api: GitLabApi
@@ -89,28 +115,61 @@ class CollectUseCase:
         include_subgroups: bool,
         cache: Cache,
     ) -> Report:
-        services: typing.Final = []
-        for project in self._resolve_projects(groups=groups, projects=projects, include_subgroups=include_subgroups):
-            try:
-                services.append(self._collect_service(project, cache))
-            except GitLabError as exc:
-                cache.keep_project(project.id)
-                services.append(
-                    Service(
-                        project=project.path_with_namespace,
-                        project_url=project.web_url,
-                        error=explain_failure(project, exc),
-                    )
-                )
+        services: typing.Final = [
+            self._collect_or_explain(project, cache, links=None)
+            for project in self._resolve_projects(groups=groups, projects=projects, include_subgroups=include_subgroups)
+        ]
         return Report(
             collected_at=datetime.datetime.now(datetime.UTC),
             production_environment=self.settings.production_environment,
             services=services,
-            jira=self._collect_jira(self.jira, services) if self.jira else None,
+            jira=self._read_issues(self.jira, _row_keys(services)) if self.jira else None,
         )
 
-    def _collect_jira(self, jira: JiraApi, services: list[Service]) -> JiraState:
-        keys: typing.Final = sorted({key.key for service in services for row in service.rows for key in row.jira_keys})
+    def for_issues(self, *, keys: collections.abc.Sequence[str], cache: Cache) -> Report:
+        if self.jira is None:
+            msg = "--jira needs RELEASE_SCOPE_JIRA_ENDPOINT and RELEASE_SCOPE_JIRA_TOKEN."
+            raise ConfigError(msg)
+        state: typing.Final = self._read_issues(self.jira, keys)
+        services: typing.Final[list[Service]] = []
+        if state.error is None:
+            links_by_project: dict[str, list[LinkedChange]] = {}
+            for key in keys:
+                issue = state.issues.get(key)
+                for link in issue.links if issue else []:
+                    links_by_project.setdefault(link.project, []).append(link)
+            services.extend(
+                self._scoped_service(path, links_by_project[path], cache) for path in sorted(links_by_project)
+            )
+            row_state: typing.Final = self._read_issues(self.jira, sorted(set(_row_keys(services)) - set(keys)))
+            state.issues.update(row_state.issues)
+            state.missing.extend(row_state.missing)
+            state.error = row_state.error
+        return Report(
+            collected_at=datetime.datetime.now(datetime.UTC),
+            production_environment=self.settings.production_environment,
+            services=services,
+            jira=state,
+            jira_scope=list(keys),
+        )
+
+    def _scoped_service(self, path: str, links: list[LinkedChange], cache: Cache) -> Service:
+        try:
+            project: typing.Final = self.api.get_project(path)
+        except GitLabError as exc:
+            return Service(project=path, project_url=links[0].project_url, error=f"{path}: {exc}")
+        return self._collect_or_explain(project, cache, links=links)
+
+    def _collect_or_explain(self, project: Project, cache: Cache, *, links: list[LinkedChange] | None) -> Service:
+        try:
+            return self._collect_service(project, cache, links=links)
+        except GitLabError as exc:
+            cache.keep_project(project.id)
+            return Service(
+                project=project.path_with_namespace, project_url=project.web_url, error=explain_failure(project, exc)
+            )
+
+    def _read_issues(self, jira: JiraApi, keys: collections.abc.Sequence[str]) -> JiraState:
         state: typing.Final = JiraState()
         if not keys:
             return state
@@ -131,6 +190,7 @@ class CollectUseCase:
                 status=fields.status.name,
                 status_category=fields.status.category.key if fields.status.category else None,
                 issue_type=fields.issuetype.name if fields.issuetype else None,
+                url=self._jira_url(key),
             )
         try:
             for key, issue in state.issues.items():
@@ -169,7 +229,8 @@ class CollectUseCase:
             resolved[project.id] = project
         return sorted(resolved.values(), key=lambda item: item.path_with_namespace)
 
-    def _collect_service(self, project: Project, cache: Cache) -> Service:
+    def _collect_service(self, project: Project, cache: Cache, *, links: list[LinkedChange] | None) -> Service:
+        cache.visit(project.id)
         service: typing.Final = Service(
             project=project.path_with_namespace, project_url=project.web_url, default_branch=project.default_branch
         )
@@ -191,39 +252,115 @@ class CollectUseCase:
             service.warnings.append(f"No successful deployment to '{self.settings.production_environment}'.")
             return service
 
-        commits, truncated = self.api.list_first_parent_commits(
-            project.id, f"{production.sha}..{project.default_branch}", max_items=self.settings.max_commits
-        )
-        if truncated:
-            service.warnings.append(f"Stopped after {self.settings.max_commits} commits; older changes are omitted.")
-        if not commits:
-            return service
-
-        since: typing.Final = min(commit.committed_date for commit in commits)
-        drafts: typing.Final = group_rows(
-            commits, self._commit_merge_requests(project, project.default_branch, commits, since, cache)
-        )
-        tags, tags_truncated = self.api.list_tags(project.id)
-        if tags_truncated:
-            service.warnings.append("Tag list was truncated; some tags may be missing from rows.")
-        tags_by_sha: typing.Final[dict[str, list[str]]] = {}
-        for tag in tags:
-            tags_by_sha.setdefault(tag.commit.id, []).append(tag.name)
-        main_pipelines: typing.Final = self._latest_by_sha(
-            self.api.list_push_pipelines(project.id, ref=project.default_branch, updated_after=since)
-        )
+        walk: typing.Final = self._walk(project, project.default_branch, production.sha, service, cache)
+        drafts, linked = walk.drafts, [False] * len(walk.drafts)
+        if links is not None:
+            drafts, linked = self._scope_rows(project, project.default_branch, service, walk, links, cache)
         service.rows.extend(
             self._build_row(
                 project=project,
                 draft=draft,
-                tags_by_sha=tags_by_sha,
-                main_pipelines=main_pipelines,
+                tags_by_sha=walk.tags_by_sha,
+                main_pipelines=walk.main_pipelines,
                 environments=service.environments,
                 cache=cache,
-            )
-            for draft in drafts
+            ).model_copy(update={"linked": is_linked})
+            for draft, is_linked in zip(drafts, linked, strict=True)
         )
         return service
+
+    def _walk(self, project: Project, default_branch: str, baseline: str, service: Service, cache: Cache) -> _Walk:
+        commits, truncated = self.api.list_first_parent_commits(
+            project.id, f"{baseline}..{default_branch}", max_items=self.settings.max_commits
+        )
+        walk: typing.Final = _Walk(truncated=truncated)
+        if truncated:
+            service.warnings.append(f"Stopped after {self.settings.max_commits} commits; older changes are omitted.")
+        if not commits:
+            return walk
+        since: typing.Final = min(commit.committed_date for commit in commits)
+        walk.drafts = group_rows(commits, self._commit_merge_requests(project, default_branch, commits, since, cache))
+        tags, tags_truncated = self.api.list_tags(project.id)
+        if tags_truncated:
+            service.warnings.append("Tag list was truncated; some tags may be missing from rows.")
+        for tag in tags:
+            walk.tags_by_sha.setdefault(tag.commit.id, []).append(tag.name)
+        walk.main_pipelines = self._latest_by_sha(
+            self.api.list_push_pipelines(project.id, ref=default_branch, updated_after=since)
+        )
+        return walk
+
+    def _scope_rows(  # noqa: PLR0913, PLR0917
+        self,
+        project: Project,
+        default_branch: str,
+        service: Service,
+        walk: _Walk,
+        links: list[LinkedChange],
+        cache: Cache,
+    ) -> tuple[list[RowDraft], list[bool]]:
+        target: typing.Final = self._link_target(project, default_branch, links, cache)
+        service.warnings.extend(target.warnings)
+        index: typing.Final = next(
+            (position for position, draft in enumerate(walk.drafts) if target.matches(draft)), None
+        )
+        service.release = self._release(project, target, walk, index, cache)
+        drafts: typing.Final = walk.drafts[index:] if index is not None else []
+        return drafts, [target.matches(draft) for draft in drafts]
+
+    def _link_target(
+        self, project: Project, default_branch: str, links: list[LinkedChange], cache: Cache
+    ) -> _LinkTarget:
+        merged: typing.Final[set[int]] = set()
+        pending: typing.Final[list[MergeRequestRef]] = []
+        warnings: typing.Final[list[str]] = []
+        for link in links:
+            if link.iid is None:
+                continue
+            merge_request = self._linked_merge_request(project, link.iid, cache)
+            if merge_request.state != "merged":
+                pending.append(_merge_request_ref(merge_request))
+            elif merge_request.target_branch != default_branch:
+                warnings.append(
+                    f"!{merge_request.iid} was merged into {merge_request.target_branch}, not {default_branch}."
+                )
+            else:
+                merged.add(merge_request.iid)
+        return _LinkTarget(
+            merged=merged, shas=[link.sha for link in links if link.sha], pending=pending, warnings=warnings
+        )
+
+    def _linked_merge_request(self, project: Project, iid: int, cache: Cache) -> MergeRequest:
+        cached: typing.Final = cache.get_merge_request(project.id, iid)
+        if cached is not None:
+            return cached
+        merge_request: typing.Final = self.api.get_merge_request(project.id, iid)
+        if merge_request.state == "merged":
+            cache.put_merge_request(project.id, merge_request)
+        return merge_request
+
+    def _release(self, project: Project, target: _LinkTarget, walk: _Walk, index: int | None, cache: Cache) -> Release:
+        if index is None:
+            if target.merged and not walk.truncated:
+                state: typing.Literal["in_production", "not_merged", "not_found"] = "in_production"
+            elif target.pending and not target.merged:
+                state = "not_merged"
+            else:
+                state = "not_found"
+            return Release(state=state, pending_merge_requests=target.pending)
+        tag_name: typing.Final = next(
+            (
+                names[-1]
+                for draft in reversed(walk.drafts[: index + 1])
+                if (names := [name for commit in draft.commits for name in walk.tags_by_sha.get(commit.id, [])])
+            ),
+            None,
+        )
+        return Release(
+            state="pending",
+            tag=self._tag_ref(project, tag_name, cache) if tag_name else None,
+            pending_merge_requests=target.pending,
+        )
 
     def _commit_merge_requests(
         self, project: Project, default_branch: str, commits: list[Commit], since: datetime.datetime, cache: Cache

@@ -12,6 +12,7 @@ from release_scope._report import (
     LinkedChange,
     MergeRequestRef,
     PipelineState,
+    Release,
     Report,
     Row,
     Service,
@@ -347,3 +348,72 @@ def test_jira_failure_is_shown_under_the_legend() -> None:
 
     assert lines[4].startswith("Legend:")
     assert lines[6] == "❌ Jira rejected the token (401)."
+
+
+def _scoped(*services: Service) -> Report:
+    jira: typing.Final = JiraState(
+        issues={
+            "SHOP-140": _JIRA.issues["SHOP-140"].model_copy(update={"url": "https://j.test/browse/SHOP-140"}),
+            "SHOP-9": _JIRA.issues["SHOP-9"],
+        },
+        missing=["SHOP-404"],
+    )
+    return _report(*services, jira=jira).model_copy(update={"jira_scope": ["SHOP-140", "SHOP-404"]})
+
+
+_TAG: typing.Final = TagRef(name="2.4.0", url="https://g.test/t/2.4.0", pipeline=_pipeline(5120, "success"))
+_SCOPED_API: typing.Final = _API.model_copy(
+    update={
+        "rows": [_API.rows[1].model_copy(update={"linked": True}), _API.rows[2]],
+        "release": Release(state="pending", tag=_TAG),
+    }
+)
+
+
+def test_scoped_page_names_the_issues_and_the_release_tag() -> None:
+    lines: typing.Final = render_markdown(_scoped(_SCOPED_API)).splitlines()
+
+    assert lines[0] == "# Release scope: SHOP-140, SHOP-404"
+    assert lines[2].endswith("Changes run from the commit on `prod` to the latest change linked to the issues.")
+    assert lines[4:6] == [
+        "- [SHOP-140](https://j.test/browse/SHOP-140) Refund \\| endpoint · In Progress",
+        "- SHOP-404 · not found in Jira",
+    ]
+    assert lines[7].endswith(" · 🎯 linked to the issues")
+    assert "| 2 changes · release [2.4.0](https://g.test/p/5120) ✅ | 1 not done | ❌ 2 · ⚠️ 1 allowed |" in lines[11]
+    assert any(line.startswith("| [2.4.0](https://g.test/p/5120) ❌ | 🎯 [!311]") for line in lines)
+
+
+def test_scoped_service_without_a_tag_needs_one() -> None:
+    untagged: typing.Final = _SCOPED_API.model_copy(update={"release": Release(state="pending")})
+
+    assert "| 2 changes · needs a new tag |" in render_markdown(_scoped(untagged))
+
+
+def test_scoped_service_with_unmerged_work_asks_for_attention() -> None:
+    waiting: typing.Final = _BILLING.model_copy(
+        update={
+            "release": Release(
+                state="not_merged",
+                pending_merge_requests=[
+                    MergeRequestRef(iid=7, title="WIP", url="https://g.test/mr/7", author="jdoe", merged_at=None)
+                ],
+            )
+        }
+    )
+    lost: typing.Final = _BILLING.model_copy(update={"project": "acme/lost", "release": Release(state="not_found")})
+
+    page: typing.Final = render_markdown(_scoped(waiting, lost))
+
+    assert "| [acme/billing](https://g.test/acme/billing) | [1.8.1](https://g.test/d2) | ⏳ not merged |  |  |" in page
+    assert (
+        "| [acme/lost](https://g.test/acme/billing) | [1.8.1](https://g.test/d2) | ⚠️ linked change not found |  |  |"
+        in page
+    )
+    assert "⏳ Not merged: [!7](https://g.test/mr/7) WIP · @jdoe" in page.splitlines()
+
+
+def test_scoped_service_already_in_production_is_up_to_date() -> None:
+    shipped: typing.Final = _BILLING.model_copy(update={"release": Release(state="in_production")})
+
+    assert "<summary>1 service up to date</summary>" in render_markdown(_scoped(shipped))
