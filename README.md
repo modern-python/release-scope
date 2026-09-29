@@ -10,7 +10,10 @@ Jira issues, failed jobs.
 For every service it reads the latest successful production deployment, walks the default branch down to that
 commit, and writes one JSON report: a row per merge request or direct commit, newest first, with the tags that
 point into it, the environments running it, the Jira keys its MR mentions, and the failed jobs of its main-branch
-and tag pipelines. With a Jira token, it also reads the summary and status of every key in one batched search.
+and tag pipelines. With a Jira token, it also reads the summary and status of every key in one batched search,
+and the GitLab merge requests and commits linked to each issue. GitLab's Jira integration adds those links to the
+issue's Web links whenever a commit or MR mentions it; a link counts only if it starts with
+`RELEASE_SCOPE_GITLAB__ENDPOINT`. The projects they point to are the issue's related services.
 
 ## Quickstart
 
@@ -51,8 +54,8 @@ Every setting is an environment variable; nothing about a GitLab or Jira instanc
 The report is versioned by `schema_version`; the models live in
 [`release_scope/_report.py`](https://github.com/modern-python/release-scope/blob/main/release_scope/_report.py).
 Top-level `jira` is `null` without a Jira token; otherwise it holds `issues` by key (summary, status, status
-category, issue type), the `missing` keys Jira did not return, and an `error` if the search failed. One row,
-trimmed:
+category, issue type, linked GitLab changes), the `missing` keys Jira did not return, and an `error` if a Jira
+request failed. One row, trimmed:
 
 ```json
 {
@@ -78,7 +81,8 @@ uvx release-scope collect --group team/backend --output report.json --cache cach
 The page opens with a table of the services that have pending changes or problems, with the ref each environment runs;
 services already up to date collapse into one expandable table. Each service with changes then has a collapsible table
 of its rows: the tag linked to its pipeline, the merge requests or direct commit, Jira keys with summary and status,
-where the change is deployed, and the failed jobs of its main-branch and tag pipelines. With Jira issues, the
+the other services its Jira issues link to, where the change is deployed, and the failed jobs of its main-branch
+and tag pipelines. With Jira issues, the
 summary table also counts the issues per service whose status is not done.
 
 Chain the two commands with `;`, not `&&`: `collect` exits `1` when a service failed, which is exactly when the page

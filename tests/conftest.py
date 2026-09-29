@@ -9,7 +9,9 @@ from tests.payloads import (
     COMMITS,
     FAILED_BRIDGES,
     FAILED_JOBS,
+    JIRA_ISSUE_API,
     JIRA_ISSUES,
+    JIRA_REMOTE_LINKS,
     JIRA_SEARCH,
     MERGED_MERGE_REQUESTS,
     PREVIEW_DEPLOYMENT,
@@ -77,4 +79,6 @@ def gitlab(httpx2_mock: respx.Router) -> respx.Router:
 @pytest.fixture
 def jira(gitlab: respx.Router) -> respx.Router:
     gitlab.post(JIRA_SEARCH, name="jira_search").respond(json=jira_page(*JIRA_ISSUES))
+    for key, links in JIRA_REMOTE_LINKS.items():
+        gitlab.get(f"{JIRA_ISSUE_API}/{key}/remotelink", name=f"remote_links:{key}").respond(json=links)
     return gitlab

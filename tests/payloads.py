@@ -6,6 +6,7 @@ API: typing.Final = f"{ENDPOINT}/api/v4"
 SERVICE_API: typing.Final = f"{API}/projects/1"
 JIRA_ENDPOINT: typing.Final = "https://jira.example.test"
 JIRA_SEARCH: typing.Final = f"{JIRA_ENDPOINT}/rest/api/2/search"
+JIRA_ISSUE_API: typing.Final = f"{JIRA_ENDPOINT}/rest/api/2/issue"
 
 
 def project(
@@ -172,3 +173,25 @@ JIRA_ISSUES: typing.Final = [
     jira_issue("SHOP-9", "Fix typo", status="Done", category="done"),
     jira_issue("SHOP-12", "New endpoint"),
 ]
+
+
+def remote_link(url: str, title: str = "GitLab") -> dict[str, typing.Any]:
+    return {
+        "id": 1,
+        "globalId": url,
+        "relationship": "mentioned on",
+        "object": {"url": url, "title": title},
+    }
+
+
+JIRA_REMOTE_LINKS: typing.Final = {
+    "SHOP-9": [],
+    "SHOP-12": [
+        remote_link(f"{ENDPOINT}/team/svc/-/merge_requests/12"),
+        remote_link(f"{ENDPOINT}/team/web/-/merge_requests/5"),
+        remote_link(f"{ENDPOINT}/team/web/-/merge_requests/5"),
+        remote_link(f"{ENDPOINT}/team/worker/-/commit/abc1234def"),
+        remote_link("https://wiki.example.test/pages/42", title="Design"),
+        remote_link("https://gitlab.other.test/team/api/-/merge_requests/1"),
+    ],
+}

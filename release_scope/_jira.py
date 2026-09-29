@@ -9,6 +9,7 @@ from release_scope._errors import JiraError
 
 
 _SEARCH: typing.Final = "/rest/api/2/search"
+_ISSUE: typing.Final = "/rest/api/2/issue"
 _BATCH_SIZE: typing.Final = 100
 _FIELDS: typing.Final = ("summary", "status", "issuetype")
 
@@ -42,6 +43,18 @@ class _SearchResults(pydantic.BaseModel):
     issues: list[Issue]
 
 
+class RemoteObject(pydantic.BaseModel):
+    url: str | None = None
+
+
+class RemoteLink(pydantic.BaseModel):
+    target: RemoteObject | None = pydantic.Field(default=None, alias="object")
+
+
+class _RemoteLinks(pydantic.RootModel[list[RemoteLink]]):
+    pass
+
+
 def _error_messages(exc: httpware.StatusError) -> str:
     try:
         payload: typing.Final = exc.response.json()
@@ -53,15 +66,15 @@ def _error_messages(exc: httpware.StatusError) -> str:
     return " ".join(str(message) for message in messages)
 
 
-def _translate(exc: httpware.ClientError) -> JiraError:
+def _translate(exc: httpware.ClientError, *, target: str) -> JiraError:
     if isinstance(exc, httpware.UnauthorizedError):
         return JiraError("Jira rejected the token (401). Check that it is valid and not expired.")
     if isinstance(exc, httpware.StatusError):
         status: typing.Final = exc.response.status_code
         details: typing.Final = _error_messages(exc)
         suffix: typing.Final = f": {details.rstrip('.')}." if details else "."
-        return JiraError(f"Jira returned {status} for the issue search{suffix}")
-    return JiraError(f"Jira issue search failed: {type(exc).__name__}.")
+        return JiraError(f"Jira returned {status} for {target}{suffix}")
+    return JiraError(f"Jira request for {target} failed: {type(exc).__name__}.")
 
 
 def _batches(keys: collections.abc.Sequence[str]) -> collections.abc.Iterator[collections.abc.Sequence[str]]:
@@ -93,7 +106,13 @@ class JiraApi:
             try:
                 page = self.http.post(_SEARCH, json=body, response_model=_SearchResults)
             except httpware.ClientError as exc:
-                raise _translate(exc) from exc
+                raise _translate(exc, target="the issue search") from exc
             issues.extend(page.issues)
             if not page.issues or len(issues) >= page.total:
                 return issues
+
+    def remote_links(self, key: str) -> list[RemoteLink]:
+        try:
+            return self.http.get(f"{_ISSUE}/{key}/remotelink", response_model=_RemoteLinks).root
+        except httpware.ClientError as exc:
+            raise _translate(exc, target=f"the remote links of {key}") from exc

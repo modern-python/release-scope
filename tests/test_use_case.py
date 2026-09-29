@@ -20,6 +20,7 @@ from tests.payloads import (
     COMMITS,
     ENDPOINT,
     JIRA_ENDPOINT,
+    JIRA_ISSUE_API,
     JIRA_ISSUES,
     PUSH_PIPELINES,
     SERVICE,
@@ -160,6 +161,7 @@ def test_jira_issues_of_all_rows_come_from_one_search(jira: respx.Router) -> Non
 
 
 def test_jira_search_pages_until_all_issues_are_read(jira: respx.Router) -> None:
+    jira.get(f"{JIRA_ISSUE_API}/SHOP-13/remotelink").respond(json=[])
     jira["jira_search"].side_effect = [
         httpx.Response(200, json=jira_page(JIRA_ISSUES[0], total=3)),
         httpx.Response(200, json=jira_page(JIRA_ISSUES[1], jira_issue("SHOP-13", "Docs"), start_at=1, total=3)),
@@ -172,6 +174,7 @@ def test_jira_search_pages_until_all_issues_are_read(jira: respx.Router) -> None
     assert [json.loads(call.request.content)["startAt"] for call in jira["jira_search"].calls] == [0, 1]
 
 
+@pytest.mark.httpx2(assert_all_called=False)
 def test_jira_search_stops_on_an_empty_page(jira: respx.Router) -> None:
     jira["jira_search"].respond(json=jira_page(total=5))
 
@@ -182,6 +185,7 @@ def test_jira_search_stops_on_an_empty_page(jira: respx.Router) -> None:
     assert jira["jira_search"].call_count == 1
 
 
+@pytest.mark.httpx2(assert_all_called=False)
 def test_jira_keys_are_searched_in_batches(jira: respx.Router) -> None:
     keys: typing.Final = " ".join(f"SHOP-{number}" for number in range(1000, 1101))
     jira["commits"].respond(json=[commit("head", keys, date="2026-09-25T00:00:00Z"), *COMMITS[1:]])
@@ -210,9 +214,10 @@ def test_rows_without_jira_keys_need_no_search() -> None:
         ),
         (httpx.Response(500, text="boom"), "Jira returned 500 for the issue search."),
         (httpx.Response(403, json={"message": "no"}), "Jira returned 403 for the issue search."),
-        (httpcore2.ConnectError("refused"), "Jira issue search failed: NetworkError."),
+        (httpcore2.ConnectError("refused"), "Jira request for the issue search failed: NetworkError."),
     ],
 )
+@pytest.mark.httpx2(assert_all_called=False)
 def test_jira_failure_is_reported_and_services_are_kept(
     jira: respx.Router, response: httpx.Response | Exception, error: str
 ) -> None:
@@ -224,6 +229,32 @@ def test_jira_failure_is_reported_and_services_are_kept(
     assert report.jira.error == error
     assert report.jira.issues == {}
     assert len(_only_service(report).rows) == 5
+
+
+def test_jira_issues_list_the_gitlab_changes_linked_to_them(jira: respx.Router) -> None:
+    state: typing.Final = _collect(with_jira=True).jira
+
+    assert state is not None
+    assert state.issues["SHOP-9"].links == []
+    assert [
+        (item.kind, item.project, item.project_url, item.iid, item.sha) for item in state.issues["SHOP-12"].links
+    ] == [
+        ("merge_request", "team/svc", f"{ENDPOINT}/team/svc", 12, None),
+        ("merge_request", "team/web", f"{ENDPOINT}/team/web", 5, None),
+        ("commit", "team/worker", f"{ENDPOINT}/team/worker", None, "abc1234def"),
+    ]
+    assert jira["remote_links:SHOP-12"].call_count == 1
+
+
+@pytest.mark.httpx2(assert_all_called=False)
+def test_remote_link_failure_is_reported_and_keeps_the_issues(jira: respx.Router) -> None:
+    jira["remote_links:SHOP-12"].respond(404)
+
+    state: typing.Final = _collect(with_jira=True).jira
+
+    assert state is not None
+    assert state.error == "Jira returned 404 for the remote links of SHOP-12."
+    assert sorted(state.issues) == ["SHOP-12", "SHOP-9"]
 
 
 @pytest.mark.usefixtures("gitlab")

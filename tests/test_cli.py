@@ -98,6 +98,7 @@ def test_collect_reads_jira_issues_with_a_bearer_token(
 
 
 @pytest.mark.usefixtures("cli_env")
+@pytest.mark.httpx2(assert_all_called=False)
 def test_jira_failure_is_reported_and_exits_non_zero(
     jira: respx.Router, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:

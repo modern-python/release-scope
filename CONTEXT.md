@@ -31,5 +31,9 @@ A job or bridge whose status is `failed`, including those with `allow_failure`; 
 A Jira issue whose status category is anything but `done`. Jira's category, not the status name, which each workflow
 names differently.
 
+**Related service**:
+A GitLab project that a Jira issue's Web links point to through a merge request or commit, other than the service
+the row belongs to. It need not be in the report.
+
 **Settled fact**:
 Data GitLab will not change for the same key, and so the only data the cache may hold.

@@ -81,12 +81,22 @@ class Service(pydantic.BaseModel):
     error: str | None = None
 
 
+class LinkedChange(pydantic.BaseModel):
+    kind: typing.Literal["merge_request", "commit"]
+    project: str
+    project_url: str
+    url: str
+    iid: int | None = None
+    sha: str | None = None
+
+
 class JiraIssue(pydantic.BaseModel):
     key: str
     summary: str
     status: str
     status_category: str | None
     issue_type: str | None
+    links: list[LinkedChange] = pydantic.Field(default_factory=list)
 
 
 class JiraState(pydantic.BaseModel):
