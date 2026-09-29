@@ -124,6 +124,61 @@ def test_jira_token_needs_a_jira_endpoint(monkeypatch: pytest.MonkeyPatch, tmp_p
     assert "Jira token is set but RELEASE_SCOPE_JIRA_ENDPOINT is not." in result.output
 
 
+@pytest.fixture
+def jira_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("RELEASE_SCOPE_JIRA_ENDPOINT", JIRA_ENDPOINT)
+    monkeypatch.setenv("JIRA_TOKEN", "jira-pat")
+    monkeypatch.setenv("RELEASE_SCOPE_JIRA_PROJECT_KEYS", '["SHOP"]')
+
+
+@pytest.mark.usefixtures("cli_env", "jira_env", "scoped")
+@pytest.mark.httpx2(assert_all_called=False)
+def test_collect_for_jira_issues_writes_a_scoped_report(tmp_path: pathlib.Path) -> None:
+    output: typing.Final = tmp_path / "report.json"
+    cache: typing.Final = tmp_path / "cache.json"
+
+    result: typing.Final = _invoke("collect", "--jira", "SHOP-12", "-o", str(output), "--cache", str(cache))
+
+    assert result.exit_code == 1
+    report: typing.Final = json.loads(output.read_text())
+    assert report["jira_scope"] == ["SHOP-12"]
+    assert [item["project"] for item in report["services"]] == ["team/svc", "team/web", "team/worker"]
+    assert json.loads(cache.read_text())["merge_requests"]["1"]["12"]["iid"] == 12
+    assert "Error: team/web: GitLab returned 404" in result.output
+
+
+@pytest.mark.usefixtures("cli_env", "jira_env", "scoped")
+@pytest.mark.httpx2(assert_all_called=False)
+def test_jira_issue_missing_from_jira_exits_non_zero(tmp_path: pathlib.Path) -> None:
+    result: typing.Final = _invoke("collect", "--jira", "SHOP-404", "-o", str(tmp_path / "r.json"))
+
+    assert result.exit_code == 1
+    assert "Error: Jira has no issue SHOP-404." in result.output
+
+
+@pytest.mark.usefixtures("cli_env", "jira_env")
+@pytest.mark.parametrize(
+    ("args", "message"),
+    [
+        (("--jira", "SHOP-1", "-g", "team"), "Pass either --jira or --group/--project, not both."),
+        (("--jira", "shop-1"), "Not a Jira issue key: shop-1."),
+    ],
+)
+def test_jira_option_is_validated(tmp_path: pathlib.Path, args: tuple[str, ...], message: str) -> None:
+    result: typing.Final = _invoke("collect", *args, "-o", str(tmp_path / "r.json"))
+
+    assert result.exit_code == 2
+    assert message in result.output
+
+
+@pytest.mark.usefixtures("cli_env")
+def test_jira_option_needs_jira_settings(tmp_path: pathlib.Path) -> None:
+    result: typing.Final = _invoke("collect", "--jira", "SHOP-1", "-o", str(tmp_path / "r.json"))
+
+    assert result.exit_code == 2
+    assert "--jira needs RELEASE_SCOPE_JIRA_ENDPOINT and RELEASE_SCOPE_JIRA_TOKEN." in result.output
+
+
 @pytest.mark.usefixtures("cli_env")
 def test_forbidden_service_fails_alone_and_exits_non_zero(gitlab: respx.Router, tmp_path: pathlib.Path) -> None:
     gitlab["group"].respond(json=[SERVICE, project(2, "team/nodeploy")])
@@ -163,7 +218,7 @@ def test_collect_needs_a_group_or_project(tmp_path: pathlib.Path) -> None:
     result: typing.Final = _invoke("collect", "-o", str(tmp_path / "r.json"))
 
     assert result.exit_code == 2
-    assert "Pass at least one --group or --project." in result.output
+    assert "Pass --jira, or at least one --group or --project." in result.output
 
 
 def test_collect_needs_a_token(tmp_path: pathlib.Path) -> None:

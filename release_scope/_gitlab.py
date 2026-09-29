@@ -237,6 +237,11 @@ class GitLabApi:
         )
         return merge_requests
 
+    def get_merge_request(self, project_id: int, iid: int) -> MergeRequest:
+        return self._get(
+            f"{_API}/projects/{project_id}/merge_requests/{iid}", {}, MergeRequest, resource="merge_requests"
+        )
+
     def commit_merge_requests(self, project_id: int, sha: str) -> list[MergeRequest]:
         merge_requests, _ = self._pages(
             f"{_API}/projects/{project_id}/repository/commits/{sha}/merge_requests",

@@ -13,6 +13,7 @@ from tests.payloads import (
     JIRA_ISSUES,
     JIRA_REMOTE_LINKS,
     JIRA_SEARCH,
+    LINKED_MERGE_REQUEST,
     MERGED_MERGE_REQUESTS,
     PREVIEW_DEPLOYMENT,
     PRODUCTION_DEPLOYMENT,
@@ -22,6 +23,7 @@ from tests.payloads import (
     TAG_PIPELINES,
     TAGS,
     jira_page,
+    project,
 )
 
 
@@ -82,3 +84,14 @@ def jira(gitlab: respx.Router) -> respx.Router:
     for key, links in JIRA_REMOTE_LINKS.items():
         gitlab.get(f"{JIRA_ISSUE_API}/{key}/remotelink", name=f"remote_links:{key}").respond(json=links)
     return gitlab
+
+
+@pytest.fixture
+def scoped(jira: respx.Router) -> respx.Router:
+    jira.get(f"{API}/projects/team%2Fsvc", name="project:team/svc").respond(json=SERVICE)
+    jira.get(f"{API}/projects/team%2Fweb", name="project:team/web").respond(404)
+    jira.get(f"{API}/projects/team%2Fworker", name="project:team/worker").respond(
+        json=project(3, "team/worker", builds_access_level="disabled")
+    )
+    jira.get(f"{SERVICE_API}/merge_requests/12", name="mr:12").respond(json=LINKED_MERGE_REQUEST)
+    return jira

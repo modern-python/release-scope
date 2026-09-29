@@ -34,6 +34,8 @@ _LEGEND: typing.Final = (
     "Legend: ✅ success · ❌ failed · 🔄 running · ⏭ canceled or skipped · ⚠️ warning or allowed failure"
 )
 _FAILED, _SKIPPED, _PENDING = 0, 1, 2
+_UNRELEASED: typing.Final = {"not_merged": "⏳ not merged", "not_found": "⚠️ linked change not found"}
+_LINKED: typing.Final = "🎯"
 
 
 def _inline(value: str) -> str:
@@ -79,6 +81,8 @@ def _state(service: Service) -> int | None:
         return _FAILED
     if service.rows:
         return _PENDING
+    if service.release and service.release.state in _UNRELEASED:
+        return _SKIPPED
     return _SKIPPED if service.warnings else None
 
 
@@ -109,12 +113,16 @@ def _failure_counts(service: Service) -> str:
 
 def _pending(service: Service) -> str:
     state: typing.Final = _state(service)
+    release: typing.Final = service.release
     if state == _FAILED:
         return "❌ failed to collect"
     if state == _SKIPPED:
-        return "⚠️ see below"
-    untagged: typing.Final = "" if service.rows[0].tags else " · untagged head"
-    return f"{_plural(len(service.rows), 'change')}{untagged}"
+        return _UNRELEASED.get(release.state, "⚠️ see below") if release else "⚠️ see below"
+    if release:
+        suffix = f" · release {_tag(release.tag)}" if release.tag else " · needs a new tag"
+    else:
+        suffix = "" if service.rows[0].tags else " · untagged head"
+    return f"{_plural(len(service.rows), 'change')}{suffix}"
 
 
 def _not_done(service: Service, issues: dict[str, JiraIssue]) -> str:
@@ -199,7 +207,7 @@ def _row(row: Row, project: str, jira: JiraState | None) -> list[str]:
     issues: typing.Final = jira.issues if jira else {}
     return [
         "<br>".join(_tag(tag) for tag in row.tags),
-        _merge_requests_or_commits(row),
+        f"{_LINKED} {_merge_requests_or_commits(row)}" if row.linked else _merge_requests_or_commits(row),
         "<br>".join(_jira_key(key, issues) for key in row.jira_keys),
         *([_related_services(row, project, issues)] if jira else []),
         ", ".join(_cell(name) for name in row.environments),
@@ -238,26 +246,44 @@ def _service_section(service: Service, production: str, jira: JiraState | None) 
     if service.error:
         lines.extend([f"❌ {_inline(service.error)}", ""])
     lines.extend(line for warning in service.warnings for line in (f"⚠️ {_inline(warning)}", ""))
+    release: typing.Final = service.release
+    if release and release.pending_merge_requests:
+        waiting: typing.Final = ", ".join(
+            _reference(f"!{item.iid}", item.url, item.title, f"@{item.author}" if item.author else None)
+            for item in release.pending_merge_requests
+        )
+        lines.extend([f"⏳ Not merged: {waiting}", ""])
+    if release and release.state == "not_found":
+        lines.extend(["⚠️ No linked change was found between production and the head of the default branch.", ""])
     if service.rows:
         lines.extend(_rows_section(service, production, jira))
     return lines
 
 
+def _scope_issue(key: str, jira: JiraState | None) -> str:
+    issue: typing.Final = jira.issues.get(key) if jira else None
+    if issue is None:
+        return f"- {_inline(key)} · not found in Jira"
+    return f"- {_link(_inline(key), issue.url)} {_cell(issue.summary)} · {_cell(issue.status)}"
+
+
 def render_markdown(report: Report) -> str:
     production: typing.Final = report.production_environment
     collected: typing.Final = report.collected_at.astimezone(datetime.UTC).strftime("%Y-%m-%d %H:%M")
+    jira: typing.Final = report.jira
+    scope: typing.Final = report.jira_scope
     lines: typing.Final = [
-        "# Release scope",
+        f"# Release scope: {', '.join(_inline(key) for key in scope)}" if scope else "# Release scope",
         "",
         (
             f"Collected {collected} UTC. Changes run from the commit on `{_inline(production)}` "
-            "to the head of the default branch."
+            + ("to the latest change linked to the issues." if scope else "to the head of the default branch.")
         ),
         "",
-        _LEGEND,
-        "",
     ]
-    jira: typing.Final = report.jira
+    if scope:
+        lines.extend([*(_scope_issue(key, jira) for key in scope), ""])
+    lines.extend([f"{_LEGEND} · {_LINKED} linked to the issues" if scope else _LEGEND, ""])
     if jira and jira.error:
         lines.extend([f"❌ {_inline(jira.error)}", ""])
     if not report.services:
