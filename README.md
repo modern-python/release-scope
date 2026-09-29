@@ -113,3 +113,20 @@ jobs of a finished pipeline keyed by its `updated_at`, so a retried job invalida
 the run collected, entries it did not use are dropped; other projects keep theirs, so one cache file serves both
 group and `--jira` runs. A missing, corrupt, or older-schema cache is ignored with a warning; the cache only saves
 requests and never changes the report.
+
+## Agent skill
+
+[`skills/release-scope`](https://github.com/modern-python/release-scope/tree/main/skills/release-scope) is an agent
+skill that runs `release-scope` through `uvx` and answers release questions from the report. Ask your coding agent
+what in the current repository has not reached production, what a group will ship with the next tag, or whether a
+Jira issue is released and which services it touches. For the current repository the skill takes `--project` from
+the git remote. It keeps the report and cache outside the repository and never writes to GitLab or Jira.
+
+Install it with [skills](https://github.com/vercel-labs/skills):
+
+```sh
+npx skills add modern-python/release-scope
+```
+
+The agent reads the same environment variables as the CLI, so set them first as described under Configuration.
+The skill runs `release-scope>=0.3,<0.4`, the range whose flags and report schema it describes.

@@ -30,6 +30,9 @@ Every link in `README.md` must be absolute: `https://github.com/modern-python/<r
 or `.../tree/main/<path>` for a directory. Never a relative path: `README.md` is also the PyPI long
 description, and PyPI does not rewrite relative links, so a relative one 404s on the package page.
 
+[`skills/release-scope/SKILL.md`](skills/release-scope/SKILL.md) describes the CLI flags, exit codes, and report fields
+for agents, and pins the minor version it describes. Update it, and its version range, in the same change as any of those.
+
 ## Agent skills
 
 ### Issue tracker
