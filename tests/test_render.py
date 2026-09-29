@@ -153,7 +153,7 @@ def test_page_lists_attention_first_and_collapses_up_to_date_services() -> None:
         "| [acme/utils](https://g.test/acme/utils) | — | — | ⚠️ see below |  |",
         (
             "| [acme/api](https://g.test/acme/api) | [2.3.0](https://g.test/d1) | 2.4.0 "
-            "| 3 changes · untagged head | ❌ 2 |"
+            "| 3 changes · untagged head | ❌ 2 · ⚠️ 1 allowed |"
         ),
         "",
         "<details>",
@@ -231,6 +231,20 @@ def test_service_with_changes_keeps_its_warnings_above_the_table() -> None:
     lines: typing.Final = render_markdown(_report(warned)).splitlines()
 
     assert lines.index("⚠️ Stopped after 3 commits; older changes are omitted.") < lines.index("<details>")
+
+
+def test_summary_counts_allowed_failures_apart_from_blocking_ones() -> None:
+    allowed_only: typing.Final = _API.model_copy(
+        update={
+            "rows": [
+                _API.rows[0].model_copy(
+                    update={"main_pipeline": _pipeline(5130, "success", _job("lint", allow_failure=True))}
+                )
+            ]
+        }
+    )
+
+    assert "| 1 change · untagged head | ⚠️ 1 allowed |" in render_markdown(_report(allowed_only))
 
 
 def test_link_targets_cannot_break_out_of_markdown() -> None:

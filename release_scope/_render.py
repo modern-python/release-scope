@@ -81,11 +81,16 @@ def _environment_ref(environment: EnvironmentState | None) -> str:
     return _link(_cell(environment.ref), environment.deployment_url) if environment else "—"
 
 
-def _blocking_failures(service: Service) -> int:
+def _failure_counts(service: Service) -> str:
     pipelines: typing.Final = [row.main_pipeline for row in service.rows] + [
         tag.pipeline for row in service.rows for tag in row.tags
     ]
-    return sum(1 for pipeline in pipelines if pipeline for job in pipeline.failed_jobs if not job.allow_failure)
+    jobs: typing.Final = [job for pipeline in pipelines if pipeline for job in pipeline.failed_jobs]
+    allowed: typing.Final = sum(1 for job in jobs if job.allow_failure)
+    blocking: typing.Final = len(jobs) - allowed
+    return " · ".join(
+        text for count, text in ((blocking, f"❌ {blocking}"), (allowed, f"⚠️ {allowed} allowed")) if count
+    )
 
 
 def _pending(service: Service) -> str:
@@ -99,12 +104,11 @@ def _pending(service: Service) -> str:
 
 
 def _summary_row(service: Service, environments: list[str]) -> list[str]:
-    failures: typing.Final = _blocking_failures(service)
     return [
         _link(_cell(service.project), service.project_url),
         *(_environment_ref(_environment(service, name)) for name in environments),
         _pending(service),
-        f"❌ {failures}" if failures else "",
+        _failure_counts(service),
     ]
 
 
