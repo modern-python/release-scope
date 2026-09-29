@@ -27,5 +27,9 @@ latest pipeline whose ref is a tag in the row.
 **Failed job**:
 A job or bridge whose status is `failed`, including those with `allow_failure`; the flag is reported, not filtered.
 
+**Not done**:
+A Jira issue whose status category is anything but `done`. Jira's category, not the status name, which each workflow
+names differently.
+
 **Settled fact**:
 Data GitLab will not change for the same key, and so the only data the cache may hold.

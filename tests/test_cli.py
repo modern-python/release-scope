@@ -11,7 +11,7 @@ from typer.testing import CliRunner
 
 from release_scope import ioc
 from release_scope.__main__ import MAIN_APP
-from tests.payloads import API, ENDPOINT, SERVICE, project
+from tests.payloads import API, ENDPOINT, JIRA_ENDPOINT, SERVICE, project
 
 
 _RUNNER: typing.Final = CliRunner()
@@ -43,7 +43,8 @@ def test_collect_writes_report_and_cache(gitlab: respx.Router, tmp_path: pathlib
 
     assert first.exit_code == 0, first.output
     report: typing.Final = json.loads(output.read_text())
-    assert report["schema_version"] == 1
+    assert report["schema_version"] == 2
+    assert report["jira"] is None
     assert report["production_environment"] == "production"
     assert [len(item["rows"]) for item in report["services"]] == [5]
     assert "1 services, 5 rows, 0 failed" in first.output
@@ -79,6 +80,47 @@ def test_failed_service_is_reported_and_exits_non_zero(gitlab: respx.Router, tmp
     assert result.exit_code == 1
     assert "Error: team/broken: GitLab returned 400 for deployments." in result.output
     assert [item["error"] is None for item in json.loads(output.read_text())["services"]] == [False, True]
+
+
+@pytest.mark.usefixtures("cli_env")
+def test_collect_reads_jira_issues_with_a_bearer_token(
+    jira: respx.Router, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    monkeypatch.setenv("RELEASE_SCOPE_JIRA_ENDPOINT", JIRA_ENDPOINT)
+    monkeypatch.setenv("JIRA_TOKEN", "jira-pat")
+    output: typing.Final = tmp_path / "report.json"
+
+    result: typing.Final = _invoke("collect", "-g", "team", "-o", str(output))
+
+    assert result.exit_code == 0, result.output
+    assert sorted(json.loads(output.read_text())["jira"]["issues"]) == ["SHOP-12", "SHOP-9"]
+    assert jira["jira_search"].calls.last.request.headers["Authorization"] == "Bearer jira-pat"
+
+
+@pytest.mark.usefixtures("cli_env")
+def test_jira_failure_is_reported_and_exits_non_zero(
+    jira: respx.Router, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    monkeypatch.setenv("RELEASE_SCOPE_JIRA_ENDPOINT", JIRA_ENDPOINT)
+    monkeypatch.setenv("RELEASE_SCOPE_JIRA_TOKEN", "expired")
+    jira["jira_search"].respond(401)
+    output: typing.Final = tmp_path / "report.json"
+
+    result: typing.Final = _invoke("collect", "-g", "team", "-o", str(output))
+
+    assert result.exit_code == 1
+    assert "Error: Jira rejected the token (401)." in result.output
+    assert json.loads(output.read_text())["services"][0]["rows"]
+
+
+@pytest.mark.usefixtures("cli_env")
+def test_jira_token_needs_a_jira_endpoint(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    monkeypatch.setenv("JIRA_TOKEN", "jira-pat")
+
+    result: typing.Final = _invoke("collect", "-g", "team", "-o", str(tmp_path / "r.json"))
+
+    assert result.exit_code == 2
+    assert "Jira token is set but RELEASE_SCOPE_JIRA_ENDPOINT is not." in result.output
 
 
 @pytest.mark.usefixtures("cli_env")
@@ -150,7 +192,7 @@ def test_module_entry_point_runs_the_app(monkeypatch: pytest.MonkeyPatch) -> Non
 def test_render_writes_markdown_from_a_report(tmp_path: pathlib.Path) -> None:
     report: typing.Final = tmp_path / "report.json"
     report.write_text(
-        '{"schema_version": 1, "collected_at": "2026-09-29T10:15:00Z", '
+        '{"schema_version": 2, "collected_at": "2026-09-29T10:15:00Z", '
         '"production_environment": "prod", "services": []}'
     )
     page: typing.Final = tmp_path / "out" / "report.md"
@@ -165,9 +207,11 @@ def test_render_writes_markdown_from_a_report(tmp_path: pathlib.Path) -> None:
 @pytest.mark.parametrize(
     ("content", "reason"),
     [
-        (None, "FileNotFoundError"),
-        ('{"schema_version": 2}', "ValidationError"),
-        ("not json", "ValidationError"),
+        (None, "FileNotFoundError."),
+        ('{"schema_version": 2}', "ValidationError."),
+        ("not json", "JSONDecodeError."),
+        ("[]", "ValidationError."),
+        ('{"schema_version": 1}', "schema_version 1 is not supported; run collect again."),
     ],
 )
 def test_render_rejects_an_unreadable_report(tmp_path: pathlib.Path, content: str | None, reason: str) -> None:
@@ -178,14 +222,14 @@ def test_render_rejects_an_unreadable_report(tmp_path: pathlib.Path, content: st
     result: typing.Final = _invoke("render", str(report), "-o", str(tmp_path / "report.md"))
 
     assert result.exit_code == 2
-    assert f"Error: Cannot read report {report}: {reason}." in result.output
+    assert f"Error: Cannot read report {report}: {reason}" in result.output
     assert not (tmp_path / "report.md").exists()
 
 
 def test_render_reports_a_page_it_cannot_write(tmp_path: pathlib.Path) -> None:
     report: typing.Final = tmp_path / "report.json"
     report.write_text(
-        '{"schema_version": 1, "collected_at": "2026-09-29T10:15:00Z", '
+        '{"schema_version": 2, "collected_at": "2026-09-29T10:15:00Z", '
         '"production_environment": "prod", "services": []}'
     )
     blocked: typing.Final = tmp_path / "report.md"

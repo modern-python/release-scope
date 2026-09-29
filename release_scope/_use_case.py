@@ -6,15 +6,18 @@ import typing
 from urllib.parse import quote
 
 from release_scope._cache import Cache, CachedPipeline
-from release_scope._errors import AuthError, GitLabError
+from release_scope._errors import AuthError, GitLabError, JiraError
 from release_scope._gitlab import Commit, Deployment, GitLabApi, MergeRequest, Pipeline, Project
+from release_scope._jira import JiraApi
 from release_scope._jira_keys import extract_jira_keys
 from release_scope._messages import explain_failure, skip_reason
 from release_scope._report import (
     CommitRef,
     EnvironmentState,
     FailedJob,
+    JiraIssue,
     JiraKeyRef,
+    JiraState,
     MergeRequestRef,
     PipelineState,
     Report,
@@ -73,6 +76,7 @@ def _commit_ref(commit: Commit) -> CommitRef:
 @dataclasses.dataclass(frozen=True, slots=True, kw_only=True)
 class CollectUseCase:
     api: GitLabApi
+    jira: JiraApi | None
     settings: Settings
 
     def __call__(
@@ -100,7 +104,34 @@ class CollectUseCase:
             collected_at=datetime.datetime.now(datetime.UTC),
             production_environment=self.settings.production_environment,
             services=services,
+            jira=self._collect_jira(self.jira, services) if self.jira else None,
         )
+
+    @staticmethod
+    def _collect_jira(jira: JiraApi, services: list[Service]) -> JiraState:
+        keys: typing.Final = sorted({key.key for service in services for row in service.rows for key in row.jira_keys})
+        state: typing.Final = JiraState()
+        if not keys:
+            return state
+        try:
+            issues: typing.Final = {issue.key: issue for issue in jira.search_issues(keys)}
+        except JiraError as exc:
+            state.error = str(exc)
+            return state
+        for key in keys:
+            issue = issues.get(key)
+            if issue is None:
+                state.missing.append(key)
+                continue
+            fields = issue.fields
+            state.issues[key] = JiraIssue(
+                key=key,
+                summary=fields.summary,
+                status=fields.status.name,
+                status_category=fields.status.category.key if fields.status.category else None,
+                issue_type=fields.issuetype.name if fields.issuetype else None,
+            )
+        return state
 
     def _resolve_projects(
         self,

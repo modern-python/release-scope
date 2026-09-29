@@ -3,7 +3,18 @@ import datetime
 import html
 import typing
 
-from release_scope._report import EnvironmentState, FailedJob, PipelineState, Report, Row, Service, TagRef
+from release_scope._report import (
+    EnvironmentState,
+    FailedJob,
+    JiraIssue,
+    JiraKeyRef,
+    JiraState,
+    PipelineState,
+    Report,
+    Row,
+    Service,
+    TagRef,
+)
 
 
 _STATUS_ICONS: typing.Final = {
@@ -107,11 +118,18 @@ def _pending(service: Service) -> str:
     return f"{_plural(len(service.rows), 'change')}{untagged}"
 
 
-def _summary_row(service: Service, environments: list[str]) -> list[str]:
+def _not_done(service: Service, issues: dict[str, JiraIssue]) -> str:
+    keys: typing.Final = {key.key for row in service.rows for key in row.jira_keys}
+    count: typing.Final = sum(1 for key in keys if key in issues and issues[key].status_category != "done")
+    return f"{count} not done" if count else ""
+
+
+def _summary_row(service: Service, environments: list[str], jira: JiraState | None) -> list[str]:
     return [
         _link(_cell(service.project), service.project_url),
         *(_environment_ref(_environment(service, name)) for name in environments),
         _pending(service),
+        *([_not_done(service, jira.issues)] if jira else []),
         _failure_counts(service),
     ]
 
@@ -161,11 +179,17 @@ def _failed_jobs(row: Row) -> str:
     return "<br>".join(parts)
 
 
-def _row(row: Row) -> list[str]:
+def _jira_key(key: JiraKeyRef, issues: dict[str, JiraIssue]) -> str:
+    text: typing.Final = _link(_cell(key.key), key.url)
+    issue: typing.Final = issues.get(key.key)
+    return f"{text} {_cell(issue.summary)} · {_cell(issue.status)}" if issue else text
+
+
+def _row(row: Row, issues: dict[str, JiraIssue]) -> list[str]:
     return [
         "<br>".join(_tag(tag) for tag in row.tags),
         _merge_requests_or_commits(row),
-        ", ".join(_link(_cell(key.key), key.url) for key in row.jira_keys),
+        "<br>".join(_jira_key(key, issues) for key in row.jira_keys),
         ", ".join(_cell(name) for name in row.environments),
         _failed_jobs(row),
     ]
@@ -179,7 +203,7 @@ def _counts(service: Service) -> str:
     )
 
 
-def _rows_section(service: Service, production: str) -> list[str]:
+def _rows_section(service: Service, production: str, issues: dict[str, JiraIssue]) -> list[str]:
     ordered: typing.Final = sorted(service.environments, key=lambda item: item.name != production)
     environments: typing.Final = [f"{_cell(item.name)} {_environment_ref(item)}" for item in ordered]
     production_state: typing.Final = _environment(service, production)
@@ -189,18 +213,18 @@ def _rows_section(service: Service, production: str) -> list[str]:
         "",
         *_collapsed(
             f"{_plural(len(service.rows), 'change')}{since}",
-            _table(_ROW_HEADER, (_row(row) for row in service.rows)),
+            _table(_ROW_HEADER, (_row(row, issues) for row in service.rows)),
         ),
     ]
 
 
-def _service_section(service: Service, production: str) -> list[str]:
+def _service_section(service: Service, production: str, issues: dict[str, JiraIssue]) -> list[str]:
     lines: typing.Final = [f"## {_inline(service.project)}", ""]
     if service.error:
         lines.extend([f"❌ {_inline(service.error)}", ""])
     lines.extend(line for warning in service.warnings for line in (f"⚠️ {_inline(warning)}", ""))
     if service.rows:
-        lines.extend(_rows_section(service, production))
+        lines.extend(_rows_section(service, production, issues))
     return lines
 
 
@@ -218,6 +242,9 @@ def render_markdown(report: Report) -> str:
         _LEGEND,
         "",
     ]
+    jira: typing.Final = report.jira
+    if jira and jira.error:
+        lines.extend([f"❌ {_inline(jira.error)}", ""])
     if not report.services:
         lines.append("No services were collected.")
         return "\n".join(lines) + "\n"
@@ -229,8 +256,14 @@ def render_markdown(report: Report) -> str:
     up_to_date: typing.Final = [service for service in report.services if _state(service) is None]
     environments: typing.Final = _environment_names(report)
     if attention:
-        header: typing.Final = ["Service", *(_cell(name) for name in environments), "Pending", "Failed jobs"]
-        lines.extend([*_table(header, (_summary_row(service, environments) for service in attention)), ""])
+        header: typing.Final = [
+            "Service",
+            *(_cell(name) for name in environments),
+            "Pending",
+            *(["Jira"] if jira else []),
+            "Failed jobs",
+        ]
+        lines.extend([*_table(header, (_summary_row(service, environments, jira) for service in attention)), ""])
     else:
         lines.extend(["All services are up to date.", ""])
     if up_to_date:
@@ -246,6 +279,7 @@ def render_markdown(report: Report) -> str:
                 ),
             )
         )
+    issues: typing.Final = jira.issues if jira else {}
     for service in attention:
-        lines.extend(_service_section(service, production))
+        lines.extend(_service_section(service, production, issues))
     return "\n".join(lines).rstrip("\n") + "\n"

@@ -9,6 +9,8 @@ from tests.payloads import (
     COMMITS,
     FAILED_BRIDGES,
     FAILED_JOBS,
+    JIRA_ISSUES,
+    JIRA_SEARCH,
     MERGED_MERGE_REQUESTS,
     PREVIEW_DEPLOYMENT,
     PRODUCTION_DEPLOYMENT,
@@ -17,6 +19,7 @@ from tests.payloads import (
     SERVICE_API,
     TAG_PIPELINES,
     TAGS,
+    jira_page,
 )
 
 
@@ -25,6 +28,8 @@ _SETTINGS_ENV: typing.Final = (
     "RELEASE_SCOPE_GITLAB__TOKEN",
     "RELEASE_SCOPE_GITLAB__ENDPOINT",
     "RELEASE_SCOPE_JIRA_ENDPOINT",
+    "RELEASE_SCOPE_JIRA_TOKEN",
+    "JIRA_TOKEN",
     "RELEASE_SCOPE_JIRA_PROJECT_KEYS",
     "RELEASE_SCOPE_ENVIRONMENTS",
     "RELEASE_SCOPE_PRODUCTION_ENVIRONMENT",
@@ -67,3 +72,9 @@ def gitlab(httpx2_mock: respx.Router) -> respx.Router:
             json=bridges
         )
     return httpx2_mock
+
+
+@pytest.fixture
+def jira(gitlab: respx.Router) -> respx.Router:
+    gitlab.post(JIRA_SEARCH, name="jira_search").respond(json=jira_page(*JIRA_ISSUES))
+    return gitlab

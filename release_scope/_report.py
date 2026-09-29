@@ -4,7 +4,7 @@ import typing
 import pydantic
 
 
-SCHEMA_VERSION: typing.Final = 1
+SCHEMA_VERSION: typing.Final = 2
 
 
 class FailedJob(pydantic.BaseModel):
@@ -81,8 +81,23 @@ class Service(pydantic.BaseModel):
     error: str | None = None
 
 
+class JiraIssue(pydantic.BaseModel):
+    key: str
+    summary: str
+    status: str
+    status_category: str | None
+    issue_type: str | None
+
+
+class JiraState(pydantic.BaseModel):
+    issues: dict[str, JiraIssue] = pydantic.Field(default_factory=dict)
+    missing: list[str] = pydantic.Field(default_factory=list)
+    error: str | None = None
+
+
 class Report(pydantic.BaseModel):
-    schema_version: typing.Literal[1] = SCHEMA_VERSION
+    schema_version: typing.Literal[2] = SCHEMA_VERSION
     collected_at: datetime.datetime
     production_environment: str
     services: list[Service]
+    jira: JiraState | None = None

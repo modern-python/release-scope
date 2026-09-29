@@ -27,10 +27,15 @@ class Settings(pydantic_settings.BaseSettings):
         env_nested_delimiter="__",
         case_sensitive=False,
         extra="ignore",
+        populate_by_name=True,
     )
 
     gitlab: GitLabConfig = pydantic.Field(default_factory=GitLabConfig)
     jira_endpoint: str | None = None
+    jira_token: pydantic.SecretStr = pydantic.Field(
+        default=pydantic.SecretStr(""),
+        validation_alias=pydantic.AliasChoices("RELEASE_SCOPE_JIRA_TOKEN", "JIRA_TOKEN"),
+    )
     jira_project_keys: list[str] = pydantic.Field(default_factory=list)
     environments: list[str] = pydantic.Field(default_factory=lambda: ["production"])
     production_environment: str = "production"
@@ -52,5 +57,8 @@ def load_settings(overrides: dict[str, typing.Any]) -> Settings:
         raise ConfigError(msg) from exc
     if not settings.gitlab.token.get_secret_value():
         msg = "GitLab token is missing. Set RELEASE_SCOPE_GITLAB__TOKEN or GITLAB_TOKEN."
+        raise ConfigError(msg)
+    if settings.jira_token.get_secret_value() and not settings.jira_endpoint:
+        msg = "Jira token is set but RELEASE_SCOPE_JIRA_ENDPOINT is not."
         raise ConfigError(msg)
     return settings

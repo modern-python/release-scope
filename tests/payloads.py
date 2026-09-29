@@ -4,6 +4,8 @@ import typing
 ENDPOINT: typing.Final = "https://gitlab.example.test"
 API: typing.Final = f"{ENDPOINT}/api/v4"
 SERVICE_API: typing.Final = f"{API}/projects/1"
+JIRA_ENDPOINT: typing.Final = "https://jira.example.test"
+JIRA_SEARCH: typing.Final = f"{JIRA_ENDPOINT}/rest/api/2/search"
 
 
 def project(
@@ -142,3 +144,31 @@ FAILED_BRIDGES: typing.Final = {
     102: [],
     201: [],
 }
+
+
+def jira_issue(
+    key: str, summary: str, *, status: str = "In Progress", category: str = "indeterminate"
+) -> dict[str, typing.Any]:
+    return {
+        "key": key,
+        "fields": {
+            "summary": summary,
+            "status": {"name": status, "statusCategory": {"key": category}},
+            "issuetype": {"name": "Task"},
+        },
+    }
+
+
+def jira_page(*issues: dict[str, typing.Any], start_at: int = 0, total: int | None = None) -> dict[str, typing.Any]:
+    return {
+        "startAt": start_at,
+        "maxResults": 100,
+        "total": len(issues) if total is None else total,
+        "issues": list(issues),
+    }
+
+
+JIRA_ISSUES: typing.Final = [
+    jira_issue("SHOP-9", "Fix typo", status="Done", category="done"),
+    jira_issue("SHOP-12", "New endpoint"),
+]

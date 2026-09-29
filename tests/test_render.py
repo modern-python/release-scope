@@ -6,7 +6,9 @@ from release_scope._report import (
     CommitRef,
     EnvironmentState,
     FailedJob,
+    JiraIssue,
     JiraKeyRef,
+    JiraState,
     MergeRequestRef,
     PipelineState,
     Report,
@@ -63,8 +65,21 @@ def _commit(sha: str, title: str) -> CommitRef:
     )
 
 
-def _report(*services: Service) -> Report:
-    return Report(collected_at=_COLLECTED_AT, production_environment="prod", services=list(services))
+def _report(*services: Service, jira: JiraState | None = None) -> Report:
+    return Report(collected_at=_COLLECTED_AT, production_environment="prod", services=list(services), jira=jira)
+
+
+def _issue(key: str, summary: str, status: str, category: str | None) -> JiraIssue:
+    return JiraIssue(key=key, summary=summary, status=status, status_category=category, issue_type="Task")
+
+
+_JIRA: typing.Final = JiraState(
+    issues={
+        "SHOP-140": _issue("SHOP-140", "Refund | endpoint", "In Progress", "indeterminate"),
+        "SHOP-9": _issue("SHOP-9", "Typo", "Done", "done"),
+    },
+    missing=["OPS-1"],
+)
 
 
 _API: typing.Final = Service(
@@ -138,7 +153,7 @@ _UTILS: typing.Final = Service(project="acme/utils", project_url="https://g.test
 
 
 def test_page_lists_attention_first_and_collapses_up_to_date_services() -> None:
-    page: typing.Final = render_markdown(_report(_API, _BILLING, _BROKEN, _UTILS))
+    page: typing.Final = render_markdown(_report(_API, _BILLING, _BROKEN, _UTILS, jira=_JIRA))
 
     assert page.splitlines() == [
         "# Release scope",
@@ -147,13 +162,13 @@ def test_page_lists_attention_first_and_collapses_up_to_date_services() -> None:
         "",
         "Legend: ✅ success · ❌ failed · 🔄 running · ⏭ canceled or skipped · ⚠️ warning or allowed failure",
         "",
-        "| Service | prod | preview | Pending | Failed jobs |",
-        "|---|---|---|---|---|",
-        "| [acme/broken](https://g.test/acme/broken) | — | — | ❌ failed to collect |  |",
-        "| [acme/utils](https://g.test/acme/utils) | — | — | ⚠️ see below |  |",
+        "| Service | prod | preview | Pending | Jira | Failed jobs |",
+        "|---|---|---|---|---|---|",
+        "| [acme/broken](https://g.test/acme/broken) | — | — | ❌ failed to collect |  |  |",
+        "| [acme/utils](https://g.test/acme/utils) | — | — | ⚠️ see below |  |  |",
         (
             "| [acme/api](https://g.test/acme/api) | [2.3.0](https://g.test/d1) | 2.4.0 "
-            "| 3 changes · untagged head | ❌ 2 · ⚠️ 1 allowed |"
+            "| 3 changes · untagged head | 1 not done | ❌ 2 · ⚠️ 1 allowed |"
         ),
         "",
         "<details>",
@@ -186,13 +201,13 @@ def test_page_lists_attention_first_and_collapses_up_to_date_services() -> None:
         "|---|---|---|---|---|",
         (
             "|  | [`9ac01f2`](https://g.test/c/9ac01f2aaaa) fix \\| &lt;b&gt;typo&lt;/b&gt; · J. Doe "
-            "| [SHOP-9](https://j.test/browse/SHOP-9) |  | main 🔄 [5130](https://g.test/p/5130) |"
+            "| [SHOP-9](https://j.test/browse/SHOP-9) Typo · Done |  | main 🔄 [5130](https://g.test/p/5130) |"
         ),
         (
             "| [2.4.0](https://g.test/p/5120) ❌ "
             "| [!311](https://g.test/mr/311) SHOP-140 \\[refund\\] endpoint · @jdoe"
             "<br>[!312](https://g.test/mr/312) Second<br>line "
-            "| [SHOP-140](https://j.test/browse/SHOP-140), OPS-1 "
+            "| [SHOP-140](https://j.test/browse/SHOP-140) Refund \\| endpoint · In Progress<br>OPS-1 "
             "| preview "
             "| main ❌ [5118](https://g.test/p/5118): [lint](https://g.test/j/lint) (allowed), "
             "[appsec](https://g.test/j/appsec) → [child](https://g.test/p/9)"
@@ -286,3 +301,19 @@ def test_section_lists_production_first() -> None:
     reordered: typing.Final = _API.model_copy(update={"environments": list(reversed(_API.environments))})
 
     assert "prod [2.3.0](https://g.test/d1) · preview 2.4.0 · " in render_markdown(_report(reordered))
+
+
+def test_page_without_jira_lists_bare_keys_and_no_jira_column() -> None:
+    page: typing.Final = render_markdown(_report(_API))
+
+    assert "| Service | prod | preview | Pending | Failed jobs |" in page
+    assert "| [SHOP-140](https://j.test/browse/SHOP-140)<br>OPS-1 |" in page
+
+
+def test_jira_failure_is_shown_under_the_legend() -> None:
+    lines: typing.Final = render_markdown(
+        _report(_API, jira=JiraState(error="Jira rejected the token (401).")),
+    ).splitlines()
+
+    assert lines[4].startswith("Legend:")
+    assert lines[6] == "❌ Jira rejected the token (401)."
