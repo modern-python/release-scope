@@ -12,6 +12,7 @@ from release_scope._cache import Cache, CacheData, CachedPipeline
 from release_scope._errors import ConfigError, GitLabError
 from release_scope._gitlab import GitLabApi
 from release_scope._jira_keys import extract_jira_keys
+from release_scope._links import parse_gitlab_link
 from release_scope._settings import GitLabConfig, Settings, load_settings
 
 
@@ -131,3 +132,24 @@ def test_container_builds_a_real_client_from_settings() -> None:
         api: typing.Final = ioc.container.resolve(GitLabApi)
 
     assert isinstance(api.http, httpware.Client)
+
+
+@pytest.mark.parametrize(
+    ("url", "expected"),
+    [
+        ("https://g.test/a/b/-/merge_requests/7", ("merge_request", "a/b", "https://g.test/a/b", 7, None)),
+        ("https://g.test/a/b/-/merge_requests/7#note_1", ("merge_request", "a/b", "https://g.test/a/b", 7, None)),
+        ("https://g.test/a/b/-/merge_requests/7/diffs", ("merge_request", "a/b", "https://g.test/a/b", 7, None)),
+        ("https://g.test/a/-/commit/0123abcd", ("commit", "a", "https://g.test/a", None, "0123abcd")),
+        ("https://g.test/a/b/-/issues/3", None),
+        ("https://g.test/a/b", None),
+        ("https://g.testing/a/b/-/merge_requests/7", None),
+        ("https://other.test/a/b/-/merge_requests/7", None),
+        (None, None),
+    ],
+)
+def test_gitlab_links_are_parsed_against_the_endpoint(url: str | None, expected: tuple[typing.Any, ...] | None) -> None:
+    change: typing.Final = parse_gitlab_link(url, "https://g.test/")
+
+    actual: typing.Final = (change.kind, change.project, change.project_url, change.iid, change.sha) if change else None
+    assert actual == expected

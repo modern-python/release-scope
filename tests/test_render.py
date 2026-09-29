@@ -9,6 +9,7 @@ from release_scope._report import (
     JiraIssue,
     JiraKeyRef,
     JiraState,
+    LinkedChange,
     MergeRequestRef,
     PipelineState,
     Report,
@@ -69,13 +70,40 @@ def _report(*services: Service, jira: JiraState | None = None) -> Report:
     return Report(collected_at=_COLLECTED_AT, production_environment="prod", services=list(services), jira=jira)
 
 
-def _issue(key: str, summary: str, status: str, category: str | None) -> JiraIssue:
-    return JiraIssue(key=key, summary=summary, status=status, status_category=category, issue_type="Task")
+def _issue(key: str, summary: str, status: str, category: str | None, *links: LinkedChange) -> JiraIssue:
+    return JiraIssue(
+        key=key, summary=summary, status=status, status_category=category, issue_type="Task", links=list(links)
+    )
+
+
+def _linked(project: str, iid: int) -> LinkedChange:
+    return LinkedChange(
+        kind="merge_request",
+        project=project,
+        project_url=f"https://g.test/{project}",
+        url=f"https://g.test/{project}/-/merge_requests/{iid}",
+        iid=iid,
+    )
 
 
 _JIRA: typing.Final = JiraState(
     issues={
-        "SHOP-140": _issue("SHOP-140", "Refund | endpoint", "In Progress", "indeterminate"),
+        "SHOP-140": _issue(
+            "SHOP-140",
+            "Refund | endpoint",
+            "In Progress",
+            "indeterminate",
+            _linked("acme/web", 7),
+            _linked("acme/api", 311),
+            _linked("acme/web", 8),
+            LinkedChange(
+                kind="commit",
+                project="acme/worker",
+                project_url="https://g.test/acme/worker",
+                url="https://g.test/acme/worker/-/commit/abc",
+                sha="abc",
+            ),
+        ),
         "SHOP-9": _issue("SHOP-9", "Typo", "Done", "done"),
     },
     missing=["OPS-1"],
@@ -197,17 +225,18 @@ def test_page_lists_attention_first_and_collapses_up_to_date_services() -> None:
         "<details>",
         "<summary>3 changes since 2.3.0</summary>",
         "",
-        "| Tag | Change | Jira | Deployed to | Failed jobs |",
-        "|---|---|---|---|---|",
+        "| Tag | Change | Jira | Related services | Deployed to | Failed jobs |",
+        "|---|---|---|---|---|---|",
         (
             "|  | [`9ac01f2`](https://g.test/c/9ac01f2aaaa) fix \\| &lt;b&gt;typo&lt;/b&gt; · J. Doe "
-            "| [SHOP-9](https://j.test/browse/SHOP-9) Typo · Done |  | main 🔄 [5130](https://g.test/p/5130) |"
+            "| [SHOP-9](https://j.test/browse/SHOP-9) Typo · Done |  |  | main 🔄 [5130](https://g.test/p/5130) |"
         ),
         (
             "| [2.4.0](https://g.test/p/5120) ❌ "
             "| [!311](https://g.test/mr/311) SHOP-140 \\[refund\\] endpoint · @jdoe"
             "<br>[!312](https://g.test/mr/312) Second<br>line "
             "| [SHOP-140](https://j.test/browse/SHOP-140) Refund \\| endpoint · In Progress<br>OPS-1 "
+            "| [acme/web](https://g.test/acme/web), [acme/worker](https://g.test/acme/worker) "
             "| preview "
             "| main ❌ [5118](https://g.test/p/5118): [lint](https://g.test/j/lint) (allowed), "
             "[appsec](https://g.test/j/appsec) → [child](https://g.test/p/9)"
@@ -215,7 +244,7 @@ def test_page_lists_attention_first_and_collapses_up_to_date_services() -> None:
         ),
         (
             "| [2.3.2](https://g.test/t/2.3.2) ⚠️ no pipeline "
-            "| [!305](https://g.test/mr/305) Old change · @asmith |  |  |  |"
+            "| [!305](https://g.test/mr/305) Old change · @asmith |  |  |  |  |"
         ),
         "",
         "</details>",
@@ -307,6 +336,7 @@ def test_page_without_jira_lists_bare_keys_and_no_jira_column() -> None:
     page: typing.Final = render_markdown(_report(_API))
 
     assert "| Service | prod | preview | Pending | Failed jobs |" in page
+    assert "| Tag | Change | Jira | Deployed to | Failed jobs |" in page
     assert "| [SHOP-140](https://j.test/browse/SHOP-140)<br>OPS-1 |" in page
 
 

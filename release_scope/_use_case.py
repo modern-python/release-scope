@@ -10,6 +10,7 @@ from release_scope._errors import AuthError, GitLabError, JiraError
 from release_scope._gitlab import Commit, Deployment, GitLabApi, MergeRequest, Pipeline, Project
 from release_scope._jira import JiraApi
 from release_scope._jira_keys import extract_jira_keys
+from release_scope._links import parse_gitlab_link
 from release_scope._messages import explain_failure, skip_reason
 from release_scope._report import (
     CommitRef,
@@ -18,6 +19,7 @@ from release_scope._report import (
     JiraIssue,
     JiraKeyRef,
     JiraState,
+    LinkedChange,
     MergeRequestRef,
     PipelineState,
     Report,
@@ -107,8 +109,7 @@ class CollectUseCase:
             jira=self._collect_jira(self.jira, services) if self.jira else None,
         )
 
-    @staticmethod
-    def _collect_jira(jira: JiraApi, services: list[Service]) -> JiraState:
+    def _collect_jira(self, jira: JiraApi, services: list[Service]) -> JiraState:
         keys: typing.Final = sorted({key.key for service in services for row in service.rows for key in row.jira_keys})
         state: typing.Final = JiraState()
         if not keys:
@@ -131,7 +132,20 @@ class CollectUseCase:
                 status_category=fields.status.category.key if fields.status.category else None,
                 issue_type=fields.issuetype.name if fields.issuetype else None,
             )
+        try:
+            for key, issue in state.issues.items():
+                issue.links = self._linked_changes(jira, key)
+        except JiraError as exc:
+            state.error = str(exc)
         return state
+
+    def _linked_changes(self, jira: JiraApi, key: str) -> list[LinkedChange]:
+        changes: typing.Final[dict[str, LinkedChange]] = {}
+        for link in jira.remote_links(key):
+            change = parse_gitlab_link(link.target.url if link.target else None, self.settings.gitlab.endpoint)
+            if change is not None:
+                changes.setdefault(change.url, change)
+        return list(changes.values())
 
     def _resolve_projects(
         self,
