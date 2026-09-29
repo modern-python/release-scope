@@ -62,6 +62,24 @@ One row, trimmed:
 }
 ```
 
+## Page
+
+`render` turns a report into a Markdown page for a GitLab wiki, without calling GitLab:
+
+```sh
+uvx release-scope collect --group team/backend --output report.json --cache cache.json; \
+  uvx release-scope render report.json --output report.md
+```
+
+The page opens with a table of the services that have pending changes or problems, with the ref each environment runs;
+services already up to date collapse into one expandable table. Each service with changes then has a collapsible table
+of its rows: the tag linked to its pipeline, the merge requests or direct commit, Jira keys, where the change is
+deployed, and the failed jobs of its main-branch and tag pipelines.
+
+Chain the two commands with `;`, not `&&`: `collect` exits `1` when a service failed, which is exactly when the page
+should show it. Alert on the exit code of `collect`, not on whether to render. `render` fails only when it cannot
+read the report or write the page.
+
 ## Cache
 
 `--cache` names a JSON file that is read if present and rewritten atomically after the run. It holds only facts

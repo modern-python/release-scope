@@ -3,12 +3,15 @@ import pathlib
 import typing
 
 import modern_di_typer
+import pydantic
 import typer
 
 from release_scope import ioc
 from release_scope._cache import Cache
 from release_scope._errors import ConfigError, ReleaseScopeError
 from release_scope._files import write_text_atomic
+from release_scope._render import render_markdown
+from release_scope._report import Report
 from release_scope._settings import Settings, load_settings
 from release_scope._use_case import CollectUseCase
 
@@ -94,6 +97,24 @@ def _collect_command(  # noqa: PLR0913, PLR0917
         typer.echo(f"Error: {service.error}", err=True)
     if failed:
         raise typer.Exit(code=1)
+
+
+@MAIN_APP.command("render", help="Render a JSON report as a Markdown page for a GitLab wiki.")
+def _render_command(
+    report_path: typing.Annotated[pathlib.Path, typer.Argument(help="Report JSON written by `collect`.")],
+    output: typing.Annotated[pathlib.Path, typer.Option("--output", "-o", help="Where to write the Markdown page.")],
+) -> None:
+    try:
+        report = Report.model_validate_json(report_path.read_bytes())
+    except (OSError, pydantic.ValidationError) as exc:
+        typer.echo(f"Error: Cannot read report {report_path}: {type(exc).__name__}.", err=True)
+        raise typer.Exit(code=ConfigError.exit_code) from exc
+    try:
+        write_text_atomic(output, render_markdown(report))
+    except OSError as exc:
+        typer.echo(f"Error: Cannot write page {output}: {type(exc).__name__}.", err=True)
+        raise typer.Exit(code=ReleaseScopeError.exit_code) from exc
+    typer.echo(f"{len(report.services)} services -> {output}", err=True)
 
 
 def main() -> None:
