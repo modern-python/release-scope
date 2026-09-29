@@ -51,6 +51,14 @@ def test_settings_read_nested_env(monkeypatch: pytest.MonkeyPatch) -> None:
     assert settings.jira_project_keys == ["SHOP", "OPS"]
 
 
+def test_jira_token_falls_back_to_the_shared_variable(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GITLAB_TOKEN", "abc")
+    monkeypatch.setenv("RELEASE_SCOPE_JIRA_ENDPOINT", "https://jira.example.test")
+    monkeypatch.setenv("JIRA_TOKEN", "jira-pat")
+
+    assert load_settings({}).jira_token.get_secret_value() == "jira-pat"
+
+
 def test_invalid_settings_raise_config_error(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("GITLAB_TOKEN", "abc")
 

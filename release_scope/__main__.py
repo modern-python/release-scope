@@ -1,9 +1,9 @@
 import importlib.metadata
+import json
 import pathlib
 import typing
 
 import modern_di_typer
-import pydantic
 import typer
 
 from release_scope import ioc
@@ -11,7 +11,7 @@ from release_scope._cache import Cache
 from release_scope._errors import ConfigError, ReleaseScopeError
 from release_scope._files import write_text_atomic
 from release_scope._render import render_markdown
-from release_scope._report import Report
+from release_scope._report import SCHEMA_VERSION, Report
 from release_scope._settings import Settings, load_settings
 from release_scope._use_case import CollectUseCase
 
@@ -95,7 +95,10 @@ def _collect_command(  # noqa: PLR0913, PLR0917
     typer.echo(f"{len(report.services)} services, {rows} rows, {len(failed)} failed -> {output}", err=True)
     for service in failed:
         typer.echo(f"Error: {service.error}", err=True)
-    if failed:
+    jira_error: typing.Final = report.jira.error if report.jira else None
+    if jira_error:
+        typer.echo(f"Error: {jira_error}", err=True)
+    if failed or jira_error:
         raise typer.Exit(code=1)
 
 
@@ -105,8 +108,17 @@ def _render_command(
     output: typing.Annotated[pathlib.Path, typer.Option("--output", "-o", help="Where to write the Markdown page.")],
 ) -> None:
     try:
-        report = Report.model_validate_json(report_path.read_bytes())
-    except (OSError, pydantic.ValidationError) as exc:
+        raw = json.loads(report_path.read_bytes())
+        version = raw.get("schema_version") if isinstance(raw, dict) else None
+        if isinstance(version, int) and version < SCHEMA_VERSION:
+            typer.echo(
+                f"Error: Cannot read report {report_path}: schema_version {version} is not supported; "
+                "run collect again.",
+                err=True,
+            )
+            raise typer.Exit(code=ConfigError.exit_code)
+        report = Report.model_validate(raw)
+    except (OSError, ValueError) as exc:
         typer.echo(f"Error: Cannot read report {report_path}: {type(exc).__name__}.", err=True)
         raise typer.Exit(code=ConfigError.exit_code) from exc
     try:

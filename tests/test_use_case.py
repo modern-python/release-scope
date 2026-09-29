@@ -1,3 +1,4 @@
+import json
 import typing
 
 import httpcore2
@@ -10,10 +11,24 @@ import respx
 from release_scope._cache import Cache
 from release_scope._errors import AuthError, GitLabError
 from release_scope._gitlab import GitLabApi
+from release_scope._jira import JiraApi
 from release_scope._report import Report, Service
 from release_scope._settings import GitLabConfig, Settings
 from release_scope._use_case import CollectUseCase
-from tests.payloads import API, COMMITS, ENDPOINT, PUSH_PIPELINES, SERVICE, commit, pipeline, project
+from tests.payloads import (
+    API,
+    COMMITS,
+    ENDPOINT,
+    JIRA_ENDPOINT,
+    JIRA_ISSUES,
+    PUSH_PIPELINES,
+    SERVICE,
+    commit,
+    jira_issue,
+    jira_page,
+    pipeline,
+    project,
+)
 
 
 def _settings(**overrides: typing.Any) -> Settings:  # noqa: ANN401
@@ -32,10 +47,13 @@ def _collect(
     *,
     groups: tuple[str, ...] = ("team",),
     projects: tuple[str, ...] = (),
+    with_jira: bool = False,
     **overrides: typing.Any,  # noqa: ANN401
 ) -> Report:
     use_case: typing.Final = CollectUseCase(
-        api=GitLabApi(http=httpware.Client(base_url=ENDPOINT)), settings=_settings(**overrides)
+        api=GitLabApi(http=httpware.Client(base_url=ENDPOINT)),
+        jira=JiraApi(http=httpware.Client(base_url=JIRA_ENDPOINT)) if with_jira else None,
+        settings=_settings(**overrides),
     )
     return use_case(groups=groups, projects=projects, include_subgroups=False, cache=cache or Cache())
 
@@ -114,6 +132,98 @@ def test_jira_keys_have_no_url_without_a_jira_endpoint() -> None:
 
     assert [(key.key, key.url) for key in rows[1].jira_keys] == [("SHOP-12", None), ("SHOP-13", None), ("OPS-1", None)]
     assert [key.key for key in rows[2].jira_keys] == ["UTF-8"]
+
+
+@pytest.mark.usefixtures("gitlab")
+def test_report_has_no_jira_state_without_a_jira_token() -> None:
+    assert _collect().jira is None
+
+
+def test_jira_issues_of_all_rows_come_from_one_search(jira: respx.Router) -> None:
+    state: typing.Final = _collect(with_jira=True).jira
+
+    assert state is not None
+    assert state.error is None
+    assert [(item.key, item.summary, item.status, item.status_category) for item in state.issues.values()] == [
+        ("SHOP-12", "New endpoint", "In Progress", "indeterminate"),
+        ("SHOP-9", "Fix typo", "Done", "done"),
+    ]
+    assert state.missing == ["SHOP-13"]
+    body: typing.Final = json.loads(jira["jira_search"].calls.last.request.content)
+    assert body == {
+        "jql": 'key in ("SHOP-12", "SHOP-13", "SHOP-9")',
+        "fields": ["summary", "status", "issuetype"],
+        "startAt": 0,
+        "maxResults": 100,
+        "validateQuery": False,
+    }
+
+
+def test_jira_search_pages_until_all_issues_are_read(jira: respx.Router) -> None:
+    jira["jira_search"].side_effect = [
+        httpx.Response(200, json=jira_page(JIRA_ISSUES[0], total=3)),
+        httpx.Response(200, json=jira_page(JIRA_ISSUES[1], jira_issue("SHOP-13", "Docs"), start_at=1, total=3)),
+    ]
+
+    state: typing.Final = _collect(with_jira=True).jira
+
+    assert state is not None
+    assert sorted(state.issues) == ["SHOP-12", "SHOP-13", "SHOP-9"]
+    assert [json.loads(call.request.content)["startAt"] for call in jira["jira_search"].calls] == [0, 1]
+
+
+def test_jira_search_stops_on_an_empty_page(jira: respx.Router) -> None:
+    jira["jira_search"].respond(json=jira_page(total=5))
+
+    state: typing.Final = _collect(with_jira=True).jira
+
+    assert state is not None
+    assert state.missing == ["SHOP-12", "SHOP-13", "SHOP-9"]
+    assert jira["jira_search"].call_count == 1
+
+
+def test_jira_keys_are_searched_in_batches(jira: respx.Router) -> None:
+    keys: typing.Final = " ".join(f"SHOP-{number}" for number in range(1000, 1101))
+    jira["commits"].respond(json=[commit("head", keys, date="2026-09-25T00:00:00Z"), *COMMITS[1:]])
+    jira["jira_search"].respond(json=jira_page())
+
+    _collect(with_jira=True)
+
+    assert [json.loads(call.request.content)["jql"].count(",") + 1 for call in jira["jira_search"].calls] == [100, 3]
+
+
+@pytest.mark.usefixtures("gitlab")
+def test_rows_without_jira_keys_need_no_search() -> None:
+    state: typing.Final = _collect(with_jira=True, jira_project_keys=["NONE"]).jira
+
+    assert state is not None
+    assert (state.issues, state.missing, state.error) == ({}, [], None)
+
+
+@pytest.mark.parametrize(
+    ("response", "error"),
+    [
+        (httpx.Response(401), "Jira rejected the token (401). Check that it is valid and not expired."),
+        (
+            httpx.Response(400, json={"errorMessages": ["Field 'key' is broken.", "Try again."]}),
+            "Jira returned 400 for the issue search: Field 'key' is broken. Try again.",
+        ),
+        (httpx.Response(500, text="boom"), "Jira returned 500 for the issue search."),
+        (httpx.Response(403, json={"message": "no"}), "Jira returned 403 for the issue search."),
+        (httpcore2.ConnectError("refused"), "Jira issue search failed: NetworkError."),
+    ],
+)
+def test_jira_failure_is_reported_and_services_are_kept(
+    jira: respx.Router, response: httpx.Response | Exception, error: str
+) -> None:
+    jira["jira_search"].side_effect = [response]
+
+    report: typing.Final = _collect(with_jira=True)
+
+    assert report.jira is not None
+    assert report.jira.error == error
+    assert report.jira.issues == {}
+    assert len(_only_service(report).rows) == 5
 
 
 @pytest.mark.usefixtures("gitlab")

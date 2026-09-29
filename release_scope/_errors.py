@@ -21,3 +21,7 @@ class GitLabError(ReleaseScopeError):
         self.resource = resource
         self.status = status
         self.reason = reason
+
+
+class JiraError(ReleaseScopeError):
+    pass
