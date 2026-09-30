@@ -27,9 +27,9 @@ _WARNING: typing.Final = (
 )
 
 
-def _environment(name: str, ref: str, url: str | None = None) -> EnvironmentState:
+def _environment(name: str, ref: str, url: str | None = None, *, tag: bool = False) -> EnvironmentState:
     return EnvironmentState(
-        name=name, ref=ref, sha=f"sha-{ref}", deployed_at="2026-09-20T00:00:00Z", deployment_url=url
+        name=name, ref=ref, sha=f"sha-{ref}", deployed_at="2026-09-20T00:00:00Z", deployment_url=url, tag=tag
     )
 
 
@@ -115,7 +115,7 @@ _API: typing.Final = Service(
     project="acme/api",
     project_url="https://g.test/acme/api",
     default_branch="main",
-    environments=[_environment("prod", "2.3.0", "https://g.test/d1"), _environment("preview", "2.4.0")],
+    environments=[_environment("prod", "2.3.0", "https://g.test/d1", tag=True), _environment("preview", "2.4.0")],
     rows=[
         Row(
             kind="commit",
@@ -191,13 +191,14 @@ def test_page_lists_attention_first_and_collapses_up_to_date_services() -> None:
         "",
         "Legend: ✅ success · ❌ failed · 🔄 running · ⏭ canceled or skipped · ⚠️ warning or allowed failure",
         "",
-        "| Service | prod | preview | Pending | Jira | Failed jobs |",
-        "|---|---|---|---|---|---|",
-        "| [acme/broken](https://g.test/acme/broken) | — | — | ❌ failed to collect |  |  |",
-        "| [acme/utils](https://g.test/acme/utils) | — | — | ⚠️ see below |  |  |",
+        "| Service | prod | preview | Pending | Compare | Jira | Failed jobs |",
+        "|---|---|---|---|---|---|---|",
+        "| [acme/broken](https://g.test/acme/broken) | — | — | ❌ failed to collect |  |  |  |",
+        "| [acme/utils](https://g.test/acme/utils) | — | — | ⚠️ see below |  |  |  |",
         (
             "| [acme/api](https://g.test/acme/api) | [2.3.0](https://g.test/d1) | 2.4.0 "
-            "| 3 changes · untagged head | 1 not done | ❌ 2 · ⚠️ 1 allowed |"
+            "| 3 changes · untagged head | [2.3.0...2.4.0](https://g.test/acme/api/-/compare/2.3.0...2.4.0) "
+            "| 1 not done | ❌ 2 · ⚠️ 1 allowed |"
         ),
         "",
         "<details>",
@@ -256,7 +257,7 @@ def test_page_without_changes_or_problems_says_so() -> None:
     page: typing.Final = render_markdown(_report(_BILLING))
 
     assert "All services are up to date." in page.splitlines()
-    assert "| Service | prod | Pending | Failed jobs |" not in page
+    assert "| Service | prod | Pending | Compare | Failed jobs |" not in page
     assert "<summary>1 service up to date</summary>" in page
 
 
@@ -289,7 +290,7 @@ def test_summary_counts_allowed_failures_apart_from_blocking_ones() -> None:
         }
     )
 
-    assert "| 1 change · untagged head | ⚠️ 1 allowed |" in render_markdown(_report(allowed_only))
+    assert "| 1 change · untagged head |  | ⚠️ 1 allowed |" in render_markdown(_report(allowed_only))
 
 
 def test_link_targets_cannot_break_out_of_markdown() -> None:
@@ -317,6 +318,29 @@ def test_service_with_rows_but_no_production_environment_still_renders() -> None
 
     assert "<summary>3 changes</summary>" in page
     assert "preview 2.4.0 · 3 merge requests, 1 direct commit" in page
+    assert "| 3 changes · untagged head |  | ❌ 2 · ⚠️ 1 allowed |" in page
+
+
+def test_compare_starts_from_the_production_commit_when_it_was_not_deployed_from_a_tag() -> None:
+    production: typing.Final = EnvironmentState(
+        name="prod", ref="main", sha="0a1b2c3d4e5f", deployed_at="2026-09-20T00:00:00Z", deployment_url=None
+    )
+    from_branch: typing.Final = _API.model_copy(update={"environments": [production]})
+
+    assert "| [`0a1b2c3d`...2.4.0](https://g.test/acme/api/-/compare/0a1b2c3d4e5f...2.4.0) |" in render_markdown(
+        _report(from_branch)
+    )
+
+
+def test_compare_quotes_the_tag_but_keeps_its_slashes() -> None:
+    odd_tag: typing.Final = TagRef(name="release/2.4#1", url="https://g.test/t/x", pipeline=None)
+    tagged: typing.Final = _API.model_copy(
+        update={"rows": [_API.rows[0].model_copy(update={"tags": [odd_tag]}), *_API.rows[1:]]}
+    )
+
+    assert "| [2.3.0...release/2.4#1](https://g.test/acme/api/-/compare/2.3.0...release/2.4%231) |" in render_markdown(
+        _report(tagged)
+    )
 
 
 def test_pipe_in_a_link_target_does_not_split_the_cell() -> None:
@@ -336,7 +360,7 @@ def test_section_lists_production_first() -> None:
 def test_page_without_jira_lists_bare_keys_and_no_jira_column() -> None:
     page: typing.Final = render_markdown(_report(_API))
 
-    assert "| Service | prod | preview | Pending | Failed jobs |" in page
+    assert "| Service | prod | preview | Pending | Compare | Failed jobs |" in page
     assert "| Tag | Change | Jira | Deployed to | Failed jobs |" in page
     assert "| [SHOP-140](https://j.test/browse/SHOP-140)<br>OPS-1 |" in page
 
@@ -380,14 +404,25 @@ def test_scoped_page_names_the_issues_and_the_release_tag() -> None:
         "- SHOP-404 · not found in Jira",
     ]
     assert lines[7].endswith(" · 🎯 linked to the issues")
-    assert "| 2 changes · release [2.4.0](https://g.test/p/5120) ✅ | 1 not done | ❌ 2 · ⚠️ 1 allowed |" in lines[11]
+    assert (
+        "| 2 changes · release [2.4.0](https://g.test/p/5120) ✅ "
+        "| [2.3.0...2.4.0](https://g.test/acme/api/-/compare/2.3.0...2.4.0) | 1 not done | ❌ 2 · ⚠️ 1 allowed |"
+    ) in lines[11]
     assert any(line.startswith("| [2.4.0](https://g.test/p/5120) ❌ | 🎯 [!311]") for line in lines)
 
 
 def test_scoped_service_without_a_tag_needs_one() -> None:
     untagged: typing.Final = _SCOPED_API.model_copy(update={"release": Release(state="pending")})
 
-    assert "| 2 changes · needs a new tag |" in render_markdown(_scoped(untagged))
+    assert "| 2 changes · needs a new tag |  |" in render_markdown(_scoped(untagged))
+
+
+def test_scoped_compare_goes_to_the_release_tag() -> None:
+    later: typing.Final = _SCOPED_API.model_copy(
+        update={"release": Release(state="pending", tag=_TAG.model_copy(update={"name": "2.4.1"}))}
+    )
+
+    assert "(https://g.test/acme/api/-/compare/2.3.0...2.4.1) |" in render_markdown(_scoped(later))
 
 
 def test_scoped_service_with_unmerged_work_asks_for_attention() -> None:
@@ -405,9 +440,11 @@ def test_scoped_service_with_unmerged_work_asks_for_attention() -> None:
 
     page: typing.Final = render_markdown(_scoped(waiting, lost))
 
-    assert "| [acme/billing](https://g.test/acme/billing) | [1.8.1](https://g.test/d2) | ⏳ not merged |  |  |" in page
     assert (
-        "| [acme/lost](https://g.test/acme/billing) | [1.8.1](https://g.test/d2) | ⚠️ linked change not found |  |  |"
+        "| [acme/billing](https://g.test/acme/billing) | [1.8.1](https://g.test/d2) | ⏳ not merged |  |  |  |" in page
+    )
+    assert (
+        "| [acme/lost](https://g.test/acme/billing) | [1.8.1](https://g.test/d2) | ⚠️ linked change not found |  |  |  |"
         in page
     )
     assert "⏳ Not merged: [!7](https://g.test/mr/7) WIP · @jdoe" in page.splitlines()

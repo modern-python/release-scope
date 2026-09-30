@@ -81,7 +81,7 @@ PRODUCTION_DEPLOYMENT: typing.Final = {
     "ref": "1.0.0",
     "sha": "prod",
     "created_at": "2026-09-01T00:00:00Z",
-    "deployable": {"web_url": f"{ENDPOINT}/team/svc/-/jobs/70"},
+    "deployable": {"web_url": f"{ENDPOINT}/team/svc/-/jobs/70", "tag": True},
 }
 PREVIEW_DEPLOYMENT: typing.Final = {
     "id": 8,

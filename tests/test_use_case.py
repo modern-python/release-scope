@@ -80,6 +80,7 @@ def test_rows_run_from_newest_commit_down_to_production() -> None:
     assert [item.name for item in service.environments] == ["production", "preview"]
     assert service.environments[0].deployment_url == f"{ENDPOINT}/team/svc/-/jobs/70"
     assert service.environments[1].deployment_url is None
+    assert [item.tag for item in service.environments] == [True, False]
     assert service.warnings == []
 
 

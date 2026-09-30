@@ -70,6 +70,7 @@ class EnvironmentState(pydantic.BaseModel):
     sha: str
     deployed_at: str
     deployment_url: str | None
+    tag: bool = False
 
 
 class Release(pydantic.BaseModel):
