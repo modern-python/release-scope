@@ -28,6 +28,7 @@ class Project(pydantic.BaseModel):
 
 class Deployable(pydantic.BaseModel):
     web_url: str | None = None
+    tag: bool = False
 
 
 class Deployment(pydantic.BaseModel):

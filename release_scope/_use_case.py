@@ -51,6 +51,7 @@ def _environment_state(name: str, deployment: Deployment) -> EnvironmentState:
         sha=deployment.sha,
         deployed_at=deployment.created_at,
         deployment_url=deployment.deployable.web_url if deployment.deployable else None,
+        tag=deployment.deployable.tag if deployment.deployable else False,
     )
 
 

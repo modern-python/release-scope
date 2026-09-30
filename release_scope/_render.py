@@ -2,6 +2,7 @@ import collections.abc
 import datetime
 import html
 import typing
+from urllib.parse import quote
 
 from release_scope._report import (
     EnvironmentState,
@@ -131,11 +132,23 @@ def _not_done(service: Service, issues: dict[str, JiraIssue]) -> str:
     return f"{count} not done" if count else ""
 
 
-def _summary_row(service: Service, environments: list[str], jira: JiraState | None) -> list[str]:
+def _compare(service: Service, production: str) -> str:
+    start: typing.Final = _environment(service, production)
+    release: typing.Final = service.release
+    tag: typing.Final = release.tag if release else next((tag for row in service.rows for tag in row.tags), None)
+    if start is None or tag is None:
+        return ""
+    base, label = (start.ref, _cell(start.ref)) if start.tag else (start.sha, f"`{start.sha[:8]}`")
+    return _link(f"{label}...{_cell(tag.name)}", f"{service.project_url}/-/compare/{quote(base)}...{quote(tag.name)}")
+
+
+def _summary_row(service: Service, report: Report, environments: list[str]) -> list[str]:
+    jira: typing.Final = report.jira
     return [
         _link(_cell(service.project), service.project_url),
         *(_environment_ref(_environment(service, name)) for name in environments),
         _pending(service),
+        _compare(service, report.production_environment),
         *([_not_done(service, jira.issues)] if jira else []),
         _failure_counts(service),
     ]
@@ -301,10 +314,11 @@ def render_markdown(report: Report) -> str:
             "Service",
             *(_cell(name) for name in environments),
             "Pending",
+            "Compare",
             *(["Jira"] if jira else []),
             "Failed jobs",
         ]
-        lines.extend([*_table(header, (_summary_row(service, environments, jira) for service in attention)), ""])
+        lines.extend([*_table(header, (_summary_row(service, report, environments) for service in attention)), ""])
     else:
         lines.extend(["All services are up to date.", ""])
     if up_to_date:

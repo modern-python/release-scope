@@ -93,7 +93,8 @@ uvx release-scope collect --group team/backend --output report.json --cache cach
   uvx release-scope render report.json --output report.md
 ```
 
-The page opens with a table of the services that have pending changes or problems, with the ref each environment runs;
+The page opens with a table of the services that have pending changes or problems, with the ref each environment runs
+and a GitLab compare link from production to the newest pending tag (to the release tag in a `--jira` report);
 services already up to date collapse into one expandable table. Each service with changes then has a collapsible table
 of its rows: the tag linked to its pipeline, the merge requests or direct commit, Jira keys with summary and status,
 the other services its Jira issues link to, where the change is deployed, and the failed jobs of its main-branch
