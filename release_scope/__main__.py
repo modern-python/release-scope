@@ -1,3 +1,4 @@
+import functools
 import importlib.metadata
 import json
 import pathlib
@@ -14,7 +15,6 @@ from release_scope._jira_keys import JIRA_KEY_PATTERN
 from release_scope._publish import PublishUseCase
 from release_scope._render import render_markdown
 from release_scope._report import SCHEMA_VERSION, Report
-from release_scope._settings import Settings, load_settings
 from release_scope._use_case import CollectUseCase
 
 
@@ -48,23 +48,26 @@ def _main_callback(
     pass
 
 
-@modern_di_typer.inject
-def _resolve_use_case(
-    use_case: typing.Annotated[CollectUseCase, modern_di_typer.FromDI(CollectUseCase)],
-) -> CollectUseCase:
-    return use_case
+_P = typing.ParamSpec("_P")
 
 
-@modern_di_typer.inject
-def _resolve_publish_use_case(
-    use_case: typing.Annotated[PublishUseCase, modern_di_typer.FromDI(PublishUseCase)],
-) -> PublishUseCase:
-    return use_case
+def _exit_on_error(func: typing.Callable[_P, None]) -> typing.Callable[_P, None]:
+    @functools.wraps(func)
+    def wrapper(*args: _P.args, **kwargs: _P.kwargs) -> None:
+        try:
+            func(*args, **kwargs)
+        except ReleaseScopeError as err:
+            typer.echo(f"Error: {err}", err=True)
+            raise typer.Exit(code=err.exit_code) from err
+
+    return wrapper
 
 
 @MAIN_APP.command("collect", help="Collect pending changes per service into a JSON report.")
+@_exit_on_error
+@modern_di_typer.inject
 def _collect_command(  # noqa: PLR0913, PLR0917
-    ctx: typer.Context,
+    use_case: typing.Annotated[CollectUseCase, modern_di_typer.FromDI(CollectUseCase)],
     output: typing.Annotated[pathlib.Path, typer.Option("--output", "-o", help="Where to write the report JSON.")],
     group: typing.Annotated[
         list[str] | None, typer.Option("--group", "-g", help="GitLab group path; repeatable.")
@@ -84,24 +87,14 @@ def _collect_command(  # noqa: PLR0913, PLR0917
         typer.Option("--jira", "-j", help="Jira issue key; collect only the services it links to. Repeatable."),
     ] = None,
 ) -> None:
-    try:
-        _check_selection(groups=group or [], projects=project or [], keys=jira or [])
-        settings = load_settings({})
-        modern_di_typer.fetch_di_container(ctx).set_context(Settings, settings)
-        cache, cache_warning = Cache.load(cache_path) if cache_path else (Cache(), None)
-        if cache_warning:
-            typer.echo(f"Warning: {cache_warning}", err=True)
-        use_case = _resolve_use_case(ctx=ctx)
-        if jira:
-            report = use_case.for_issues(keys=list(dict.fromkeys(jira)), cache=cache)
-        else:
-            report = use_case(
-                groups=group or [], projects=project or [], include_subgroups=include_subgroups, cache=cache
-            )
-    except ReleaseScopeError as err:
-        typer.echo(f"Error: {err}", err=True)
-        raise typer.Exit(code=err.exit_code) from err
-
+    _check_selection(groups=group or [], projects=project or [], keys=jira or [])
+    cache, cache_warning = Cache.load(cache_path) if cache_path else (Cache(), None)
+    if cache_warning:
+        typer.echo(f"Warning: {cache_warning}", err=True)
+    if jira:
+        report = use_case.for_issues(keys=list(dict.fromkeys(jira)), cache=cache)
+    else:
+        report = use_case(groups=group or [], projects=project or [], include_subgroups=include_subgroups, cache=cache)
     write_text_atomic(output, report.model_dump_json(indent=2))
     if cache_path:
         cache.save(cache_path)
@@ -169,8 +162,10 @@ def _render_command(
 
 
 @MAIN_APP.command("publish", help="Replace the content of an existing GitLab wiki page with a rendered page.")
+@_exit_on_error
+@modern_di_typer.inject
 def _publish_command(
-    ctx: typer.Context,
+    use_case: typing.Annotated[PublishUseCase, modern_di_typer.FromDI(PublishUseCase)],
     page_path: typing.Annotated[pathlib.Path, typer.Argument(help="Markdown page written by `render`.")],
     project: typing.Annotated[str, typer.Option("--project", "-p", help="GitLab project path that holds the wiki.")],
     page: typing.Annotated[str, typer.Option("--page", help="Slug of the wiki page, such as releases/backend.")],
@@ -180,13 +175,7 @@ def _publish_command(
     except (OSError, ValueError) as exc:
         typer.echo(f"Error: Cannot read page {page_path}: {type(exc).__name__}.", err=True)
         raise typer.Exit(code=ConfigError.exit_code) from exc
-    try:
-        settings = load_settings({})
-        modern_di_typer.fetch_di_container(ctx).set_context(Settings, settings)
-        published = _resolve_publish_use_case(ctx=ctx)(project=project, slug=page, content=content)
-    except ReleaseScopeError as err:
-        typer.echo(f"Error: {err}", err=True)
-        raise typer.Exit(code=err.exit_code) from err
+    published: typing.Final = use_case(project=project, slug=page, content=content)
     typer.echo(f"{'Updated' if published.updated else 'Unchanged'} {published.url}", err=True)
 
 

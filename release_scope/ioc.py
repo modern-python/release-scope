@@ -7,7 +7,7 @@ from modern_di import Scope, providers
 from release_scope._gitlab import GitLabApi
 from release_scope._jira import JiraApi
 from release_scope._publish import PublishUseCase
-from release_scope._settings import Settings
+from release_scope._settings import Settings, load_settings
 from release_scope._use_case import CollectUseCase
 
 
@@ -48,7 +48,7 @@ def _close_client(client: httpware.Client | None) -> None:
 
 
 class SettingsGroup(modern_di.Group):
-    settings = providers.ContextProvider(scope=Scope.APP, context_type=Settings)
+    settings = providers.Factory(scope=Scope.APP, creator=load_settings, cache=True)
 
 
 class ClientsGroup(modern_di.Group):
