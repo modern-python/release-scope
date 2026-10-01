@@ -11,6 +11,7 @@ from release_scope._cache import Cache
 from release_scope._errors import ConfigError, ReleaseScopeError
 from release_scope._files import write_text_atomic
 from release_scope._jira_keys import JIRA_KEY_PATTERN
+from release_scope._publish import PublishUseCase
 from release_scope._render import render_markdown
 from release_scope._report import SCHEMA_VERSION, Report
 from release_scope._settings import Settings, load_settings
@@ -51,6 +52,13 @@ def _main_callback(
 def _resolve_use_case(
     use_case: typing.Annotated[CollectUseCase, modern_di_typer.FromDI(CollectUseCase)],
 ) -> CollectUseCase:
+    return use_case
+
+
+@modern_di_typer.inject
+def _resolve_publish_use_case(
+    use_case: typing.Annotated[PublishUseCase, modern_di_typer.FromDI(PublishUseCase)],
+) -> PublishUseCase:
     return use_case
 
 
@@ -158,6 +166,28 @@ def _render_command(
         typer.echo(f"Error: Cannot write page {output}: {type(exc).__name__}.", err=True)
         raise typer.Exit(code=ReleaseScopeError.exit_code) from exc
     typer.echo(f"{len(report.services)} services -> {output}", err=True)
+
+
+@MAIN_APP.command("publish", help="Replace the content of an existing GitLab wiki page with a rendered page.")
+def _publish_command(
+    ctx: typer.Context,
+    page_path: typing.Annotated[pathlib.Path, typer.Argument(help="Markdown page written by `render`.")],
+    project: typing.Annotated[str, typer.Option("--project", "-p", help="GitLab project path that holds the wiki.")],
+    page: typing.Annotated[str, typer.Option("--page", help="Slug of the wiki page, such as releases/backend.")],
+) -> None:
+    try:
+        content = page_path.read_text(encoding="utf-8")
+    except (OSError, ValueError) as exc:
+        typer.echo(f"Error: Cannot read page {page_path}: {type(exc).__name__}.", err=True)
+        raise typer.Exit(code=ConfigError.exit_code) from exc
+    try:
+        settings = load_settings({})
+        modern_di_typer.fetch_di_container(ctx).set_context(Settings, settings)
+        published = _resolve_publish_use_case(ctx=ctx)(project=project, slug=page, content=content)
+    except ReleaseScopeError as err:
+        typer.echo(f"Error: {err}", err=True)
+        raise typer.Exit(code=err.exit_code) from err
+    typer.echo(f"{'Updated' if published.updated else 'Unchanged'} {published.url}", err=True)
 
 
 def main() -> None:

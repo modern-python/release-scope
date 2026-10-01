@@ -32,7 +32,7 @@ issue's Web links whenever a commit or MR mentions it; a link counts only if it 
 
 ```sh
 export RELEASE_SCOPE_GITLAB__ENDPOINT=https://gitlab.example.com
-export RELEASE_SCOPE_GITLAB__TOKEN=glpat-...          # read_api scope
+export RELEASE_SCOPE_GITLAB__TOKEN=glpat-...          # read_api scope; api for publish
 export RELEASE_SCOPE_ENVIRONMENTS='["prod", "preview"]'
 export RELEASE_SCOPE_PRODUCTION_ENVIRONMENT=prod
 
@@ -119,6 +119,39 @@ Chain the two commands with `;`, not `&&`: `collect` exits `1` when a service fa
 should show it. Alert on the exit code of `collect`, not on whether to render. `render` fails only when it cannot
 read the report or write the page.
 
+## Wiki
+
+`publish` replaces the content of an existing page in a project wiki with a rendered page:
+
+```sh
+uvx release-scope publish report.md --project team/docs --page releases/backend
+```
+
+`--page` is the page slug, as in its URL after `/-/wikis/`. The page must already exist; `publish` never creates
+one, so create it once in GitLab. It keeps the page title and format, and skips the write when the content is
+unchanged, so a scheduled run does not add a page version every time. Publishing needs a token with the `api` scope
+whose user has at least the Developer role in the wiki's project; a denied token exits `3`, a missing page or any
+other failed request exits `4`. GitLab rejects pages larger than its wiki page size limit, 5 MB by default; the error
+then names the size of the page.
+
+A scheduled GitLab CI job keeps the page current. It publishes even when a service failed, then fails the job:
+
+```yaml
+release-page:
+  image: python:3.13-slim
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+  script:
+    - pip install 'release-scope>=0.4,<0.5'
+    - release-scope collect --group team/backend --output report.json || status=$?
+    - release-scope render report.json --output report.md
+    - release-scope publish report.md --project team/docs --page releases/backend
+    - exit "${status:-0}"
+```
+
+Set `RELEASE_SCOPE_GITLAB__ENDPOINT` and a masked `RELEASE_SCOPE_GITLAB__TOKEN` as CI/CD variables of the project
+that runs the job, along with the other settings.
+
 ## Cache
 
 `--cache` names a JSON file that is read if present and rewritten atomically after the run. It holds only facts
@@ -134,7 +167,8 @@ requests and never changes the report.
 skill that runs `release-scope` through `uvx` and answers release questions from the report. Ask your coding agent
 what in the current repository has not reached production, what a group will ship with the next tag, or whether a
 Jira issue is released and which services it touches. For the current repository the skill takes `--project` from
-the git remote. It keeps the report and cache outside the repository and never writes to GitLab or Jira.
+the git remote. It keeps the report and cache outside the repository, and publishes to a wiki page only when you ask
+for it and name the page.
 
 Install it with [skills](https://github.com/vercel-labs/skills):
 
@@ -143,4 +177,4 @@ npx skills add modern-python/release-scope
 ```
 
 The agent reads the same environment variables as the CLI, so set them first as described under Configuration.
-The skill runs `release-scope>=0.3,<0.4`, the range whose flags and report schema it describes.
+The skill runs `release-scope>=0.4,<0.5`, the range whose flags and report schema it describes.
