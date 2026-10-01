@@ -49,9 +49,9 @@ class Settings(pydantic_settings.BaseSettings):
         return self
 
 
-def load_settings(overrides: dict[str, typing.Any]) -> Settings:
+def load_settings() -> Settings:
     try:
-        settings: typing.Final = Settings(**overrides)
+        settings: typing.Final = Settings()
     except pydantic.ValidationError as exc:
         msg = f"Invalid configuration: {exc}"
         raise ConfigError(msg) from exc

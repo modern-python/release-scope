@@ -47,7 +47,7 @@ def test_settings_read_nested_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("RELEASE_SCOPE_GITLAB__TOKEN", "abc")
     monkeypatch.setenv("RELEASE_SCOPE_JIRA_PROJECT_KEYS", '["SHOP","OPS"]')
 
-    settings: typing.Final = load_settings({})
+    settings: typing.Final = load_settings()
 
     assert settings.gitlab.token.get_secret_value() == "abc"
     assert settings.jira_project_keys == ["SHOP", "OPS"]
@@ -58,14 +58,15 @@ def test_jira_token_falls_back_to_the_shared_variable(monkeypatch: pytest.Monkey
     monkeypatch.setenv("RELEASE_SCOPE_JIRA_ENDPOINT", "https://jira.example.test")
     monkeypatch.setenv("JIRA_TOKEN", "jira-pat")
 
-    assert load_settings({}).jira_token.get_secret_value() == "jira-pat"
+    assert load_settings().jira_token.get_secret_value() == "jira-pat"
 
 
 def test_invalid_settings_raise_config_error(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("GITLAB_TOKEN", "abc")
+    monkeypatch.setenv("RELEASE_SCOPE_MAX_COMMITS", "many")
 
     with pytest.raises(ConfigError, match="Invalid configuration"):
-        load_settings({"max_commits": "many"})
+        load_settings()
 
 
 def test_cache_round_trips_through_a_file(tmp_path: pathlib.Path) -> None:
@@ -150,10 +151,14 @@ def test_container_builds_a_real_client_from_settings() -> None:
     )
 
     with ioc.container:
-        ioc.container.set_context(Settings, settings)
+        ioc.container.override(ioc.SettingsGroup.settings, settings)
         api: typing.Final = ioc.container.resolve(GitLabApi)
 
     assert isinstance(api.http, httpware.Client)
+
+
+def test_container_graph_is_valid() -> None:
+    ioc.container.validate()
 
 
 @pytest.mark.parametrize(

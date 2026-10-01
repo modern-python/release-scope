@@ -10,11 +10,12 @@ description: >
 
 # release-scope
 
-`release-scope` is a read-only CLI on PyPI. It never writes to GitLab or Jira, so it needs no approval to run.
-Always run it through uvx with this version range; it matches the flags and report schema described here:
+`release-scope` is a CLI on PyPI. `collect` and `render` only read GitLab and Jira, so they need no approval to run.
+`publish` overwrites a GitLab wiki page; see Publish. Always run it through uvx with this version range; it matches
+the flags and report schema described here:
 
 ```bash
-uvx --from 'release-scope>=0.3,<0.4' release-scope --help
+uvx --from 'release-scope>=0.4,<0.5' release-scope --help
 ```
 
 ## Check the settings
@@ -28,7 +29,7 @@ env | cut -d= -f1 | grep -E '^(RELEASE_SCOPE_|GITLAB_TOKEN$|JIRA_TOKEN$)' | sort
 | Variable | Needed for |
 |---|---|
 | `RELEASE_SCOPE_GITLAB__ENDPOINT` | Any run; defaults to `https://gitlab.com` |
-| `RELEASE_SCOPE_GITLAB__TOKEN` or `GITLAB_TOKEN` | Any run; `read_api` scope |
+| `RELEASE_SCOPE_GITLAB__TOKEN` or `GITLAB_TOKEN` | Any run; `read_api` scope, `api` for `publish` |
 | `RELEASE_SCOPE_ENVIRONMENTS` | Environments to show, a JSON list such as `'["prod", "preview"]'` |
 | `RELEASE_SCOPE_PRODUCTION_ENVIRONMENT` | The environment whose deployment starts the range; defaults to `production` |
 | `RELEASE_SCOPE_JIRA_ENDPOINT` and `RELEASE_SCOPE_JIRA_TOKEN` (or `JIRA_TOKEN`) | Jira summaries and statuses; required for `--jira` |
@@ -55,9 +56,9 @@ saves requests:
 ```bash
 out="${XDG_CACHE_HOME:-$HOME/.cache}/release-scope"
 mkdir -p "$out"
-uvx --from 'release-scope>=0.3,<0.4' release-scope collect --project team/backend/shop \
+uvx --from 'release-scope>=0.4,<0.5' release-scope collect --project team/backend/shop \
   --output "$out/report.json" --cache "$out/cache.json"; \
-  uvx --from 'release-scope>=0.3,<0.4' release-scope render "$out/report.json" --output "$out/report.md"
+  uvx --from 'release-scope>=0.4,<0.5' release-scope render "$out/report.json" --output "$out/report.md"
 ```
 
 Chain with `;`, not `&&`: `render` should still run when `collect` exits `1`.
@@ -98,3 +99,17 @@ Markdown for a GitLab wiki, and publishing it is the user's call.
 Lead with what needs attention: failed services, failed jobs without `allow_failure`, Jira issues that are not done,
 and releases that need a new tag or are not merged. Deployment data comes from GitLab environments; it shows what was
 deployed, not proof of what serves traffic.
+
+## Publish
+
+Run `publish` only when the user asks to publish the page and names the wiki's project and page; it overwrites that
+page for everyone. Do not infer either from the repository. Confirm both before running:
+
+```bash
+uvx --from 'release-scope>=0.4,<0.5' release-scope publish "$out/report.md" \
+  --project team/docs --page releases/backend
+```
+
+The page must exist; `publish` never creates one. It prints `Updated` or `Unchanged` with the page URL. Exit `3`
+means the token lacks the `api` scope or the Developer role in that project; exit `4` means the page does not exist
+or the request failed. Show the message and stop.
