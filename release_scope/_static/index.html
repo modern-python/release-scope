@@ -48,15 +48,15 @@
   tr.shipped td { background: color-mix(in srgb, var(--accent) 12%, transparent); }
   .tag { white-space: nowrap; }
   .service { border: 1px solid var(--border); border-radius: 6px; margin: 6px 0; }
-  .service > summary { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; padding: 8px 12px; cursor: pointer; }
+  .service > summary { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; padding: 8px 12px; cursor: pointer;
+    list-style: none; }
   .service[open] > summary { border-bottom: 1px solid var(--border); }
-  .service > summary { list-style: none; }
   .service > summary::before { content: "▸"; color: var(--muted); }
   .service[open] > summary::before { content: "▾"; }
   .service .name { min-width: 200px; font-weight: 600; }
   .service .body { padding: 8px 12px; }
   .service .body > p:first-child { margin-top: 0; }
-  .target { font-weight: 600; }
+  .picked-tag { font-weight: 600; }
   button.picked { border-color: var(--accent); color: var(--accent); }
 </style>
 </head>
@@ -69,7 +69,7 @@
       <p class="muted">
         Collected <span x-text="collectedAt"></span> UTC. Changes run from the commit on
         <code x-text="report.production_environment"></code> to the head of the default branch<span
-          x-text="report.jira_scope.length ? '; rows above the latest change linked to the issues are out of scope.' : '.'"></span>
+          x-text="report.jira_scope.length ? '; rows above the latest merge request or commit linked to the issues are out of scope.' : '.'"></span>
       </p>
       <ul x-show="report.jira_scope.length">
         <template x-for="key in report.jira_scope" :key="key">
@@ -84,20 +84,20 @@
       </template>
 
       <h2>Services</h2>
-      <p x-show="pickable.length" class="muted">Open a service and pick the tag to release: it ships every change from its row down to production.</p>
+      <p x-show="pickable.length" class="muted">Open a service and pick the tag to release: it ships every merge request and commit from its row down to production.</p>
       <template x-for="service in deployed" :key="service.project">
-        <details class="service" name="services" :id="anchor(service)">
+        <details class="service" name="services">
           <summary>
             <span class="name" x-text="service.project"></span>
             <span x-show="service.error" class="bad">failed to collect</span>
             <span x-show="!service.error">
               <span class="muted" x-text="productionRef(service) + ' →'"></span>
-              <span x-show="pickOf(service)" class="target" x-text="picks[service.project]"></span>
-              <span x-show="!pickOf(service)" class="muted" x-text="targetHint(service)"></span>
+              <span x-show="pickOf(service)" class="picked-tag" x-text="picks[service.project]"></span>
+              <span x-show="!pickOf(service)" class="muted" x-text="pickHint(service)"></span>
             </span>
             <span class="muted" x-text="lineDetails(service)"></span>
             <span x-text="failureCounts(service)"></span>
-            <span x-show="service.truncated" class="warn" title="Older changes were not collected; open for details">⚠️ truncated</span>
+            <span x-show="service.truncated" class="warn" title="Older merge requests and commits were not collected; open for details">range cut short</span>
           </summary>
           <div class="body">
             <p>
@@ -128,7 +128,7 @@
                         <template x-for="tag in row.tags" :key="tag.name">
                           <div class="tag">
                             <button type="button" :class="{ picked: picks[service.project] === tag.name }"
-                              @click="pick(service, tag.name); $el.closest('details').open = false"
+                              @click="pick(service, tag.name, $el)"
                               x-text="picks[service.project] === tag.name ? 'picked' : 'pick'"></button>
                             <a :href="tag.pipeline ? tag.pipeline.url : tag.url" x-text="tag.name"></a>
                             <span x-text="pipelineIcon(tag.pipeline)"></span>
@@ -175,7 +175,7 @@
               </table>
             </div>
             <p x-show="pickOf(service)">
-              <button type="button" @click="pick(service, ''); $el.closest('details').open = false">Clear target</button>
+              <button type="button" @click="pick(service, '', $el)">Clear pick</button>
             </p>
           </div>
         </details>
@@ -183,7 +183,7 @@
 
       <h2>Release</h2>
       <p x-show="!pickable.length" class="muted">No service has a tag between production and the head of the default branch.</p>
-      <p x-show="pickable.length && !picked.length" class="muted">Pick a target in a service above to fill the lists.</p>
+      <p x-show="pickable.length && !picked.length" class="muted">Pick a tag in a service above to fill the lists.</p>
       <p x-show="notice" class="warn" x-text="notice"></p>
 
       <div class="outputs" x-show="picked.length">
@@ -327,14 +327,15 @@
           .join("\n");
       },
 
-      pick(service, tag) {
+      pick(service, tag, element) {
         this.picks[service.project] = tag;
+        element.closest("details").open = false;
       },
       pickOf(service) {
         return service.candidates.find((item) => item.tag.name === this.picks[service.project]);
       },
-      targetHint(service) {
-        if (service.candidates.length) return "pick a target";
+      pickHint(service) {
+        if (service.candidates.length) return "pick a tag";
         return service.rows.length ? "no tag yet" : "up to date";
       },
       lineDetails(service) {
@@ -342,7 +343,9 @@
         if (candidate) {
           return `${candidate.rows} of ${this.rowsLabel(service.rows.length)} · ${this.plural(candidate.jira_keys.length, "task")}`;
         }
-        return service.rows.length ? this.rowsLabel(service.rows.length) : "";
+        if (!service.rows.length) return "";
+        const keys = new Set(service.rows.filter((row) => row.in_scope).flatMap((row) => row.jira_keys.map((key) => key.key)));
+        return `${this.rowsLabel(service.rows.length)} · ${this.plural(keys.size, "task")}`;
       },
       rowsLabel(count) {
         return count === 1 ? "1 merge request or commit" : `${count} merge requests or commits`;
@@ -378,9 +381,6 @@
       },
       plural(count, noun) {
         return `${count} ${noun}${count === 1 ? "" : "s"}`;
-      },
-      anchor(service) {
-        return `service-${service.project.replace(/[^A-Za-z0-9]+/g, "-")}`;
       },
       failureCounts(service) {
         const pipelines = service.rows.flatMap((row) => [row.main_pipeline, ...row.tags.map((tag) => tag.pipeline)]);

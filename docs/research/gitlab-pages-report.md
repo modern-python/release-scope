@@ -1,5 +1,8 @@
 # GitLab Pages report with interactive version picking
 
+Outcome: release 0.5.0 took the vendored Alpine.js page, with `report.json` next to it instead of inlined, and a
+pick button per tag inside each service's line instead of radio groups. Jira release creation was left out of scope.
+
 Research date: 2026-10-06. GitLab docs were read from `gitlab-org/gitlab` master (`VERSION` = `19.5.0-pre`).
 Source code links point to the same branch. Release dates come from the GitHub, npm and PyPI APIs on the research date.
 
