@@ -6,7 +6,6 @@ from modern_di import Scope, providers
 
 from release_scope._gitlab import GitLabApi
 from release_scope._jira import JiraApi
-from release_scope._publish import PublishUseCase
 from release_scope._settings import Settings, load_settings
 from release_scope._use_case import CollectUseCase
 
@@ -74,7 +73,6 @@ class UseCasesGroup(modern_di.Group):
     collect_use_case = providers.Factory(
         scope=Scope.APP, creator=CollectUseCase, kwargs={"jira": ClientsGroup.jira_api}
     )
-    publish_use_case = providers.Factory(scope=Scope.APP, creator=PublishUseCase)
 
 
 ALL_GROUPS: typing.Final[list[type[modern_di.Group]]] = [SettingsGroup, ClientsGroup, UseCasesGroup]

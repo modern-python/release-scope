@@ -104,11 +104,6 @@ class Bridge(Job):
     downstream_pipeline: DownstreamPipeline | None = None
 
 
-class WikiPage(pydantic.BaseModel):
-    slug: str
-    content: str
-
-
 class _Projects(pydantic.RootModel[list[Project]]):
     pass
 
@@ -142,7 +137,7 @@ class _Bridges(pydantic.RootModel[list[Bridge]]):
 
 
 Resource: typing.TypeAlias = typing.Literal[
-    "group", "project", "deployments", "pipelines", "repository", "merge_requests", "wiki"
+    "group", "project", "deployments", "pipelines", "repository", "merge_requests"
 ]
 
 
@@ -167,12 +162,6 @@ class GitLabApi:
     def _get(self, url: str, params: dict[str, typing.Any], model: type[_ModelT], *, resource: Resource) -> _ModelT:
         try:
             return self.http.get(url, params=params, response_model=model)
-        except httpware.ClientError as exc:
-            raise _translate(exc, url=url, resource=resource) from exc
-
-    def _put(self, url: str, body: dict[str, typing.Any], *, resource: Resource) -> None:
-        try:
-            self.http.put(url, json=body)
         except httpware.ClientError as exc:
             raise _translate(exc, url=url, resource=resource) from exc
 
@@ -299,9 +288,3 @@ class GitLabApi:
             resource="pipelines",
         )
         return bridges
-
-    def get_wiki_page(self, project: str, slug: str) -> WikiPage:
-        return self._get(f"{_API}/projects/{_quote(project)}/wikis/{_quote(slug)}", {}, WikiPage, resource="wiki")
-
-    def update_wiki_page(self, project: str, slug: str, *, content: str) -> None:
-        self._put(f"{_API}/projects/{_quote(project)}/wikis/{_quote(slug)}", {"content": content}, resource="wiki")
