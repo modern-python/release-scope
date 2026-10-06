@@ -1,6 +1,11 @@
+import importlib.resources
 import os
 import pathlib
 import tempfile
+import typing
+
+
+_STATIC: typing.Final = importlib.resources.files("release_scope") / "_static"
 
 
 def write_text_atomic(path: pathlib.Path, text: str) -> None:
@@ -12,3 +17,9 @@ def write_text_atomic(path: pathlib.Path, text: str) -> None:
         handle.flush()
         os.fsync(handle.fileno())
     pathlib.Path(handle.name).replace(path)
+
+
+def write_site(directory: pathlib.Path, report_json: str) -> None:
+    for item in _STATIC.iterdir():
+        write_text_atomic(directory / item.name, item.read_text(encoding="utf-8"))
+    write_text_atomic(directory / "report.json", report_json)

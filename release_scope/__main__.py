@@ -9,7 +9,7 @@ import typer
 from release_scope import ioc
 from release_scope._cache import Cache
 from release_scope._errors import ConfigError, ReleaseScopeError
-from release_scope._files import write_text_atomic
+from release_scope._files import write_site
 from release_scope._jira_keys import JIRA_KEY_PATTERN
 from release_scope._report import Report
 from release_scope._use_case import CollectUseCase
@@ -60,12 +60,14 @@ def _exit_on_error(func: typing.Callable[_P, None]) -> typing.Callable[_P, None]
     return wrapper
 
 
-@MAIN_APP.command("collect", help="Collect pending changes per service into a JSON report.")
+@MAIN_APP.command("collect", help="Collect pending changes per service into a static site with a JSON report.")
 @_exit_on_error
 @modern_di_typer.inject
 def _collect_command(  # noqa: PLR0913, PLR0917
     use_case: typing.Annotated[CollectUseCase, modern_di_typer.FromDI(CollectUseCase)],
-    output: typing.Annotated[pathlib.Path, typer.Option("--output", "-o", help="Where to write the report JSON.")],
+    output: typing.Annotated[
+        pathlib.Path, typer.Option("--output", "-o", help="Directory for the site: index.html and report.json.")
+    ],
     group: typing.Annotated[
         list[str] | None, typer.Option("--group", "-g", help="GitLab group path; repeatable.")
     ] = None,
@@ -92,7 +94,7 @@ def _collect_command(  # noqa: PLR0913, PLR0917
         report = use_case.for_issues(keys=list(dict.fromkeys(jira)), cache=cache)
     else:
         report = use_case(groups=group or [], projects=project or [], include_subgroups=include_subgroups, cache=cache)
-    write_text_atomic(output, report.model_dump_json(indent=2))
+    write_site(output, report.model_dump_json(indent=2))
     if cache_path:
         cache.save(cache_path)
     failed: typing.Final = [service for service in report.services if service.error]
