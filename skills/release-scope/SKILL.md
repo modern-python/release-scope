@@ -81,8 +81,9 @@ Read `$out/site/report.json` and answer the user's question from it, briefly.
   `environments` already running it, `jira_keys`, and `main_pipeline` with `failed_jobs`. Tag pipelines carry their
   own `failed_jobs`.
 - A service with no rows is up to date with production.
-- `candidates` (newest first): the tags a release could ship, each with `tag` and its `pipeline`, `changes` (rows from
-  that tag down to production), `jira_keys` (the in-scope keys of those rows, without duplicates), and `compare_url`.
+- `candidates` (newest first): the tags a release could ship, each with `tag` and its `pipeline`, `rows` (how many
+  rows run from that tag down to production), `jira_keys` (the in-scope keys of those rows, without duplicates), and
+  `compare_url`.
   To answer which issues a set of tags releases, merge the `jira_keys` of the picked candidates.
 - `jira.issues` by key: `summary`, `status`, `status_category` (anything but `done` is not done), `links` to GitLab
   merge requests and commits. `jira.missing` lists keys Jira did not return; `jira.error` a failed request. `jira` is

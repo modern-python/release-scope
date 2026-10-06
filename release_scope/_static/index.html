@@ -338,9 +338,9 @@
       lineDetails(service) {
         const candidate = this.pickOf(service);
         if (candidate) {
-          return `${candidate.changes} of ${this.plural(service.rows.length, "change")} · ${this.plural(candidate.jira_keys.length, "task")}`;
+          return `${candidate.rows} of ${service.rows.length} merge requests or commits · ${this.plural(candidate.jira_keys.length, "task")}`;
         }
-        return service.rows.length ? this.plural(service.rows.length, "change") : "";
+        return service.rows.length ? `${service.rows.length} merge requests or commits` : "";
       },
       ships(service, index) {
         const tag = this.picks[service.project];

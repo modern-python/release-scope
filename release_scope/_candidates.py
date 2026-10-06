@@ -13,7 +13,7 @@ def build_candidates(service: Service, production: EnvironmentState) -> list[Can
             Candidate(
                 tag=tag,
                 compare_url=f"{service.project_url}/-/compare/{base}...{quote(tag.name)}",
-                changes=len(shipped),
+                rows=len(shipped),
                 jira_keys=list(keys.values()),
             )
             for tag in row.tags

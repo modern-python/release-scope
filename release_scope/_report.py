@@ -83,7 +83,7 @@ class Release(pydantic.BaseModel):
 class Candidate(pydantic.BaseModel):
     tag: TagRef
     compare_url: str
-    changes: int
+    rows: int
     jira_keys: list[JiraKeyRef]
 
 

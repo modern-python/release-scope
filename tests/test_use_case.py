@@ -108,7 +108,7 @@ def test_tags_carry_their_latest_pipeline() -> None:
 def test_each_tag_in_the_range_is_a_candidate_carrying_everything_down_to_production() -> None:
     candidates: typing.Final = _only_service(_collect()).candidates
 
-    assert [(item.tag.name, item.changes, [key.key for key in item.jira_keys]) for item in candidates] == [
+    assert [(item.tag.name, item.rows, [key.key for key in item.jira_keys]) for item in candidates] == [
         ("1.2.0", 4, ["SHOP-12", "SHOP-13"]),
         ("1.1.0", 2, []),
     ]
