@@ -4,18 +4,17 @@ description: >
   Run the release-scope CLI through uvx to find what sits between production and the default branch of GitLab
   services: pending merge requests and commits, tags, environments, failed jobs, and Jira issues with their status.
   Use when the user asks what is not in production yet, what will ship with the next release or tag, whether a Jira
-  issue is released or which services it touches, or wants a release page for a GitLab wiki, for the current
+  issue is released or which services it touches, or which Jira issues a set of tags would release, for the current
   repository, a GitLab group, or a list of projects, even if they do not name release-scope.
 ---
 
 # release-scope
 
-`release-scope` is a CLI on PyPI. `collect` and `render` only read GitLab and Jira, so they need no approval to run.
-`publish` overwrites a GitLab wiki page; see Publish. Always run it through uvx with this version range; it matches
-the flags and report schema described here:
+`release-scope` is a CLI on PyPI. `collect` only reads GitLab and Jira, so it needs no approval to run. Always run it
+through uvx with this version range; it matches the flags and report schema described here:
 
 ```bash
-uvx --from 'release-scope>=0.4,<0.5' release-scope --help
+uvx --from 'release-scope>=0.5,<0.6' release-scope --help
 ```
 
 ## Check the settings
@@ -29,7 +28,7 @@ env | cut -d= -f1 | grep -E '^(RELEASE_SCOPE_|GITLAB_TOKEN$|JIRA_TOKEN$)' | sort
 | Variable | Needed for |
 |---|---|
 | `RELEASE_SCOPE_GITLAB__ENDPOINT` | Any run; defaults to `https://gitlab.com` |
-| `RELEASE_SCOPE_GITLAB__TOKEN` or `GITLAB_TOKEN` | Any run; `read_api` scope, `api` for `publish` |
+| `RELEASE_SCOPE_GITLAB__TOKEN` or `GITLAB_TOKEN` | Any run; `read_api` scope |
 | `RELEASE_SCOPE_ENVIRONMENTS` | Environments to show, a JSON list such as `'["prod", "preview"]'` |
 | `RELEASE_SCOPE_PRODUCTION_ENVIRONMENT` | The environment whose deployment starts the range; defaults to `production` |
 | `RELEASE_SCOPE_JIRA_ENDPOINT` and `RELEASE_SCOPE_JIRA_TOKEN` (or `JIRA_TOKEN`) | Jira summaries and statuses; required for `--jira` |
@@ -48,20 +47,18 @@ token into the chat. Never echo a token.
 - Jira issue keys: `--jira KEY`, repeatable. It collects only the projects the issues link to, from production up to
   the latest linked change. It cannot be combined with `--group` or `--project`.
 
-## Collect and render
+## Collect
 
-Keep the files outside the repository so they never land in its git tree. One cache file serves every run and only
-saves requests:
+Keep the files outside the repository so they never land in its git tree. `--output` is a directory; `collect`
+writes `report.json` there, next to a static page for GitLab Pages that you do not need. One cache file serves every
+run and only saves requests:
 
 ```bash
 out="${XDG_CACHE_HOME:-$HOME/.cache}/release-scope"
 mkdir -p "$out"
-uvx --from 'release-scope>=0.4,<0.5' release-scope collect --project team/backend/shop \
-  --output "$out/report.json" --cache "$out/cache.json"; \
-  uvx --from 'release-scope>=0.4,<0.5' release-scope render "$out/report.json" --output "$out/report.md"
+uvx --from 'release-scope>=0.5,<0.6' release-scope collect --project team/backend/shop \
+  --output "$out/site" --cache "$out/cache.json"
 ```
-
-Chain with `;`, not `&&`: `render` should still run when `collect` exits `1`.
 
 Exit codes of `collect`:
 
@@ -76,8 +73,7 @@ For `2` to `4` nothing was written; show the message and stop.
 
 ## Summarize the report
 
-Read `report.json` and answer the user's question from it, briefly. Point to `report.md` for the full page; it is
-Markdown for a GitLab wiki, and publishing it is the user's call.
+Read `$out/site/report.json` and answer the user's question from it, briefly.
 
 - `services[]`: `project`, `environments` (what each environment runs), `rows` (newest first, from the default
   branch head down to production), `warnings`, `error`.
@@ -85,11 +81,15 @@ Markdown for a GitLab wiki, and publishing it is the user's call.
   `environments` already running it, `jira_keys`, and `main_pipeline` with `failed_jobs`. Tag pipelines carry their
   own `failed_jobs`.
 - A service with no rows is up to date with production.
+- `candidates` (newest first): the tags a release could ship, each with `tag` and its `pipeline`, `changes` (rows from
+  that tag down to production), `jira_keys` (the in-scope keys of those rows, without duplicates), and `compare_url`.
+  To answer which issues a set of tags releases, merge the `jira_keys` of the picked candidates.
 - `jira.issues` by key: `summary`, `status`, `status_category` (anything but `done` is not done), `links` to GitLab
   merge requests and commits. `jira.missing` lists keys Jira did not return; `jira.error` a failed request. `jira` is
   `null` without a Jira token.
-- In a `--jira` report, `jira_scope` lists the issues, rows with `linked: true` are the ones the issues point to, and
-  each service has a `release`:
+- In a `--jira` report, `jira_scope` lists the issues, rows with `linked: true` are the ones the issues point to,
+  rows with `in_scope: false` sit above the latest linked change and do not ship with the issues, and each service
+  has a `release`:
   - `pending` with `tag`: that tag ships the issue; without `tag`, a new tag is needed.
   - `in_production`: every linked merge request is already deployed.
   - `not_merged`: only open merge requests link to it.
@@ -99,17 +99,3 @@ Markdown for a GitLab wiki, and publishing it is the user's call.
 Lead with what needs attention: failed services, failed jobs without `allow_failure`, Jira issues that are not done,
 and releases that need a new tag or are not merged. Deployment data comes from GitLab environments; it shows what was
 deployed, not proof of what serves traffic.
-
-## Publish
-
-Run `publish` only when the user asks to publish the page and names the wiki's project and page; it overwrites that
-page for everyone. Do not infer either from the repository. Confirm both before running:
-
-```bash
-uvx --from 'release-scope>=0.4,<0.5' release-scope publish "$out/report.md" \
-  --project team/docs --page releases/backend
-```
-
-The page must exist; `publish` never creates one. It prints `Updated` or `Unchanged` with the page URL. Exit `3`
-means the token lacks the `api` scope or the Developer role in that project; exit `4` means the page does not exist
-or the request failed. Show the message and stop.
