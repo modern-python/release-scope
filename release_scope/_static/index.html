@@ -42,12 +42,22 @@
   .bad { color: var(--bad); }
   .warn { color: var(--warn); }
   .scroll { overflow-x: auto; }
-  .services { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
-  .card { border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; }
-  .card label { display: block; padding: 2px 0; cursor: pointer; }
   .outputs { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px; margin-top: 16px; }
   .out-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
   tr.out-of-scope td { opacity: 0.55; }
+  tr.shipped td { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+  .tag { white-space: nowrap; }
+  .service { border: 1px solid var(--border); border-radius: 6px; margin: 6px 0; }
+  .service > summary { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; padding: 8px 12px; cursor: pointer; }
+  .service[open] > summary { border-bottom: 1px solid var(--border); }
+  .service > summary { list-style: none; }
+  .service > summary::before { content: "▸"; color: var(--muted); }
+  .service[open] > summary::before { content: "▾"; }
+  .service .name { min-width: 200px; font-weight: 600; }
+  .service .body { padding: 8px 12px; }
+  .service .body > p:first-child { margin-top: 0; }
+  .target { font-weight: 600; }
+  button.picked { border-color: var(--accent); color: var(--accent); }
 </style>
 </head>
 <body>
@@ -73,26 +83,106 @@
         <p class="bad" x-text="message"></p>
       </template>
 
+      <h2>Services</h2>
+      <p x-show="pickable.length" class="muted">Open a service and pick the tag to release: it ships every change from its row down to production.</p>
+      <template x-for="service in deployed" :key="service.project">
+        <details class="service" name="services" :id="anchor(service)">
+          <summary>
+            <span class="name" x-text="service.project"></span>
+            <span x-show="service.error" class="bad">failed to collect</span>
+            <span x-show="!service.error">
+              <span class="muted" x-text="productionRef(service) + ' →'"></span>
+              <span x-show="pickOf(service)" class="target" x-text="picks[service.project]"></span>
+              <span x-show="!pickOf(service)" class="muted" x-text="targetHint(service)"></span>
+            </span>
+            <span class="muted" x-text="lineDetails(service)"></span>
+            <span x-text="failureCounts(service)"></span>
+          </summary>
+          <div class="body">
+            <p>
+              <a :href="service.project_url" x-text="service.project"></a>
+              <template x-for="item in service.environments" :key="item.name">
+                <span> · <span x-text="item.name"></span> <a :href="item.deployment_url" x-text="item.ref"></a></span>
+              </template>
+            </p>
+            <p x-show="service.error" class="bad" x-text="service.error"></p>
+            <template x-for="warning in service.warnings" :key="warning">
+              <p class="warn" x-text="warning"></p>
+            </template>
+            <p x-show="service.release && service.release.pending_merge_requests.length">
+              Not merged:
+              <template x-for="item in service.release ? service.release.pending_merge_requests : []" :key="item.iid">
+                <a :href="item.url" x-text="'!' + item.iid + ' ' + item.title + ' '"></a>
+              </template>
+            </p>
+            <div class="scroll" x-show="service.rows.length">
+              <table>
+                <thead>
+                  <tr><th>Tag</th><th>Change</th><th>Jira</th><th>Deployed to</th><th>Failed jobs</th></tr>
+                </thead>
+                <tbody>
+                  <template x-for="(row, index) in service.rows" :key="index">
+                    <tr :class="{ 'out-of-scope': !row.in_scope, shipped: ships(service, index) }">
+                      <td>
+                        <template x-for="tag in row.tags" :key="tag.name">
+                          <div class="tag">
+                            <button type="button" :class="{ picked: picks[service.project] === tag.name }"
+                              @click="pick(service, tag.name); $el.closest('details').open = false"
+                              x-text="picks[service.project] === tag.name ? 'picked' : 'pick'"></button>
+                            <a :href="tag.pipeline ? tag.pipeline.url : tag.url" x-text="tag.name"></a>
+                            <span x-text="pipelineIcon(tag.pipeline)"></span>
+                          </div>
+                        </template>
+                      </td>
+                      <td>
+                        <span x-show="row.linked" title="Linked to the issues">🎯</span>
+                        <template x-for="item in row.merge_requests" :key="item.iid">
+                          <div>
+                            <a :href="item.url" x-text="'!' + item.iid"></a>
+                            <span x-text="item.title + (item.author ? ' · @' + item.author : '')"></span>
+                          </div>
+                        </template>
+                        <template x-for="item in row.merge_requests.length ? [] : row.commits" :key="item.sha">
+                          <div>
+                            <a :href="item.url"><code x-text="item.short_sha"></code></a>
+                            <span x-text="item.title + (item.author ? ' · ' + item.author : '')"></span>
+                          </div>
+                        </template>
+                        <span x-show="!row.in_scope" class="muted">out of scope</span>
+                      </td>
+                      <td>
+                        <template x-for="key in row.jira_keys" :key="key.key">
+                          <div>
+                            <a :href="key.url" x-text="key.key"></a>
+                            <span x-text="issue(key.key) ? issue(key.key).summary + ' · ' + issue(key.key).status : ''"></span>
+                          </div>
+                        </template>
+                      </td>
+                      <td x-text="row.environments.join(', ')"></td>
+                      <td>
+                        <template x-for="(line, position) in failedJobs(row)" :key="position">
+                          <div>
+                            <span x-text="line.label"></span>
+                            <a :href="line.url" x-text="line.name"></a>
+                            <span x-show="line.allowed" class="muted">(allowed)</span>
+                          </div>
+                        </template>
+                      </td>
+                    </tr>
+                  </template>
+                </tbody>
+              </table>
+            </div>
+            <p x-show="pickOf(service)">
+              <button type="button" @click="pick(service, ''); $el.closest('details').open = false">Clear target</button>
+            </p>
+          </div>
+        </details>
+      </template>
+
       <h2>Release</h2>
       <p x-show="!pickable.length" class="muted">No service has a tag between production and the head of the default branch.</p>
-      <div class="services">
-        <template x-for="service in pickable" :key="service.project">
-          <div class="card">
-            <h3><a :href="service.project_url" x-text="service.project"></a></h3>
-            <label>
-              <input type="radio" :name="service.project" value="" x-model="picks[service.project]"> none
-            </label>
-            <template x-for="candidate in service.candidates" :key="candidate.tag.name">
-              <label>
-                <input type="radio" :name="service.project" :value="candidate.tag.name" x-model="picks[service.project]">
-                <span x-text="candidate.tag.name"></span>
-                <span x-text="pipelineIcon(candidate.tag.pipeline)"></span>
-                <span class="muted" x-text="plural(candidate.changes, 'change') + ', ' + plural(candidate.jira_keys.length, 'task')"></span>
-              </label>
-            </template>
-          </div>
-        </template>
-      </div>
+      <p x-show="pickable.length && !picked.length" class="muted">Pick a target in a service above to fill the lists.</p>
       <p x-show="notice" class="warn" x-text="notice"></p>
 
       <div class="outputs" x-show="picked.length">
@@ -152,123 +242,6 @@
         </section>
       </div>
 
-      <h2>Services</h2>
-      <p x-show="!pending.length" class="muted">All services are up to date.</p>
-      <div class="scroll" x-show="pending.length">
-        <table>
-          <thead>
-            <tr>
-              <th>Service</th>
-              <template x-for="name in environmentNames" :key="name"><th x-text="name"></th></template>
-              <th>Pending</th>
-              <th>Not done</th>
-              <th>Failed jobs</th>
-            </tr>
-          </thead>
-          <tbody>
-            <template x-for="service in pending" :key="service.project">
-              <tr>
-                <td><a :href="'#' + anchor(service)" x-text="service.project"></a></td>
-                <template x-for="name in environmentNames" :key="name">
-                  <td>
-                    <template x-if="environment(service, name)">
-                      <a :href="environment(service, name).deployment_url" x-text="environment(service, name).ref"></a>
-                    </template>
-                  </td>
-                </template>
-                <td x-text="pendingText(service)"></td>
-                <td x-text="notDone(service) || ''"></td>
-                <td x-text="failureCounts(service)"></td>
-              </tr>
-            </template>
-          </tbody>
-        </table>
-      </div>
-      <details x-show="upToDate.length">
-        <summary x-text="plural(upToDate.length, 'service') + ' up to date'"></summary>
-        <ul>
-          <template x-for="service in upToDate" :key="service.project">
-            <li>
-              <a :href="service.project_url" x-text="service.project"></a>
-              <span class="muted" x-text="environment(service, report.production_environment).ref"></span>
-            </li>
-          </template>
-        </ul>
-      </details>
-
-      <template x-for="service in pending" :key="service.project">
-        <section :id="anchor(service)">
-          <h2><a :href="service.project_url" x-text="service.project"></a></h2>
-          <p x-show="service.error" class="bad" x-text="service.error"></p>
-          <template x-for="warning in service.warnings" :key="warning">
-            <p class="warn" x-text="warning"></p>
-          </template>
-          <p x-show="service.release && service.release.pending_merge_requests.length">
-            Not merged:
-            <template x-for="item in service.release ? service.release.pending_merge_requests : []" :key="item.iid">
-              <a :href="item.url" x-text="'!' + item.iid + ' ' + item.title + ' '"></a>
-            </template>
-          </p>
-          <details x-show="service.rows.length">
-            <summary x-text="plural(service.rows.length, 'change') + ' since ' + productionRef(service)"></summary>
-            <div class="scroll">
-              <table>
-                <thead>
-                  <tr><th>Tag</th><th>Change</th><th>Jira</th><th>Deployed to</th><th>Failed jobs</th></tr>
-                </thead>
-                <tbody>
-                  <template x-for="(row, index) in service.rows" :key="index">
-                    <tr :class="{ 'out-of-scope': !row.in_scope }">
-                      <td>
-                        <template x-for="tag in row.tags" :key="tag.name">
-                          <div>
-                            <a :href="tag.pipeline ? tag.pipeline.url : tag.url" x-text="tag.name"></a>
-                            <span x-text="pipelineIcon(tag.pipeline)"></span>
-                          </div>
-                        </template>
-                      </td>
-                      <td>
-                        <span x-show="row.linked" title="Linked to the issues">🎯</span>
-                        <template x-for="item in row.merge_requests" :key="item.iid">
-                          <div>
-                            <a :href="item.url" x-text="'!' + item.iid"></a>
-                            <span x-text="item.title + (item.author ? ' · @' + item.author : '')"></span>
-                          </div>
-                        </template>
-                        <template x-for="item in row.merge_requests.length ? [] : row.commits" :key="item.sha">
-                          <div>
-                            <a :href="item.url"><code x-text="item.short_sha"></code></a>
-                            <span x-text="item.title + (item.author ? ' · ' + item.author : '')"></span>
-                          </div>
-                        </template>
-                        <span x-show="!row.in_scope" class="muted">out of scope</span>
-                      </td>
-                      <td>
-                        <template x-for="key in row.jira_keys" :key="key.key">
-                          <div>
-                            <a :href="key.url" x-text="key.key"></a>
-                            <span x-text="issue(key.key) ? issue(key.key).summary + ' · ' + issue(key.key).status : ''"></span>
-                          </div>
-                        </template>
-                      </td>
-                      <td x-text="row.environments.join(', ')"></td>
-                      <td>
-                        <template x-for="(line, position) in failedJobs(row)" :key="position">
-                          <div>
-                            <span x-text="line.label"></span>
-                            <a :href="line.url" x-text="line.name"></a>
-                            <span x-show="line.allowed" class="muted">(allowed)</span>
-                          </div>
-                        </template>
-                      </td>
-                    </tr>
-                  </template>
-                </tbody>
-              </table>
-            </div>
-          </details>
-        </section>
-      </template>
       <p class="muted">Legend: ✅ success · ❌ failed · 🔄 running · ⏭ canceled or skipped · ⚠️ no pipeline</p>
     </div>
   </template>
@@ -310,26 +283,15 @@
       get pickable() {
         return this.deployed.filter((service) => service.candidates.length);
       },
-      get pending() {
-        return this.deployed.filter((service) => service.error || service.rows.length);
-      },
-      get upToDate() {
-        return this.deployed.filter((service) => !service.error && !service.rows.length);
-      },
       get problems() {
         const jira = this.report.jira;
         return jira && jira.error ? [jira.error] : [];
-      },
-      get environmentNames() {
-        const names = new Set([this.report.production_environment]);
-        for (const service of this.deployed) for (const item of service.environments) names.add(item.name);
-        return [...names];
       },
       get picked() {
         return this.pickable
           .map((service) => ({
             service,
-            candidate: service.candidates.find((item) => item.tag.name === this.picks[service.project]),
+            candidate: this.pickOf(service),
           }))
           .filter((item) => item.candidate);
       },
@@ -363,6 +325,29 @@
           .join("\n");
       },
 
+      pick(service, tag) {
+        this.picks[service.project] = tag;
+      },
+      pickOf(service) {
+        return service.candidates.find((item) => item.tag.name === this.picks[service.project]);
+      },
+      targetHint(service) {
+        if (service.candidates.length) return "pick a target";
+        return service.rows.length ? "no tag yet" : "up to date";
+      },
+      lineDetails(service) {
+        const candidate = this.pickOf(service);
+        if (candidate) {
+          return `${candidate.changes} of ${this.plural(service.rows.length, "change")} · ${this.plural(candidate.jira_keys.length, "task")}`;
+        }
+        return service.rows.length ? this.plural(service.rows.length, "change") : "";
+      },
+      ships(service, index) {
+        const tag = this.picks[service.project];
+        if (!tag) return false;
+        const picked = service.rows.findIndex((row) => row.tags.some((item) => item.name === tag));
+        return picked !== -1 && index >= picked;
+      },
       issue(key) {
         return this.report.jira ? this.report.jira.issues[key] : undefined;
       },
@@ -391,15 +376,6 @@
       },
       anchor(service) {
         return `service-${service.project.replace(/[^A-Za-z0-9]+/g, "-")}`;
-      },
-      pendingText(service) {
-        if (service.error) return "failed to collect";
-        const tag = service.candidates.length ? `, newest tag ${service.candidates[0].tag.name}` : ", untagged";
-        return this.plural(service.rows.length, "change") + tag;
-      },
-      notDone(service) {
-        const keys = new Set(service.rows.flatMap((row) => row.jira_keys.map((key) => key.key)));
-        return [...keys].filter((key) => this.issue(key) && this.issue(key).status_category !== "done").length;
       },
       failureCounts(service) {
         const pipelines = service.rows.flatMap((row) => [row.main_pipeline, ...row.tags.map((tag) => tag.pipeline)]);

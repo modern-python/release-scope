@@ -107,20 +107,20 @@ Besides `report.json`, `collect` writes `index.html` and its script into the out
 installed package and change only with it, so the page always matches the report schema. The page loads
 `report.json` from next to itself; it needs a web server, not a `file://` URL.
 
-**Release** lists every service with a tag between production and the head of the default branch. Pick at most one
-tag per service; a `--jira` report starts with each service's release tag picked. The picks drive three lists, each
-with a copy button and a text box to copy from by hand, since browsers allow the copy button only over HTTPS:
+**Services** lists every service with a production deployment as one line: what production runs, the picked
+target, and its failed jobs. Opening a line shows the service's environments, warnings, and its rows with tags and
+their pipelines, merge requests or commits, Jira keys, environments, and failed jobs; rows out of scope are dimmed.
+Each tag has a **pick** button: picking makes it the service's target, highlights the rows it ships, and closes the
+line again. A `--jira` report starts with each service's release tag picked. Services without a production
+deployment are left out of the page.
 
-- **Jira tasks**: the keys of every in-scope row from each picked tag down to production, without duplicates, with
+**Release** at the bottom turns the targets into three lists, each with a copy button and a text box to copy from by
+hand, since browsers allow the copy button only over HTTPS:
+
+- **Jira tasks**: the keys of every in-scope row from each target down to production, without duplicates, with
   summary and status, flagging issues that are not done. Copy them one per line or as a JQL `key in (...)` clause.
-- **Tag pipelines**: the pipeline of each picked tag, as a Markdown list.
-- **Compare**: a GitLab compare link per service from production to the picked tag, as a Markdown list.
-
-**Services** shows each service with pending changes or a collection error: the ref each environment runs, the
-number of changes and the newest tag, Jira issues that are not done, and failed jobs. Each has a collapsible table of
-its rows with tags and their pipelines, merge requests or commits, Jira keys, environments, and failed jobs; rows out
-of scope are dimmed. Services already up to date collapse into one list. Services without a production deployment are
-left out of the page.
+- **Tag pipelines**: the pipeline of each target, as a Markdown list.
+- **Compare**: a GitLab compare link per service from production to the target, as a Markdown list.
 
 ## GitLab Pages
 
