@@ -16,6 +16,7 @@ from tests.payloads import (
     ENDPOINT,
     JIRA_ENDPOINT,
     SERVICE_API,
+    TAGS,
     commit,
     merge_request,
     remote_link,
@@ -58,15 +59,30 @@ def test_scope_collects_every_service_the_issues_link_to() -> None:
 
 @pytest.mark.httpx2(assert_all_called=False)
 @pytest.mark.usefixtures("scoped")
-def test_rows_run_from_production_to_the_latest_linked_change() -> None:
+def test_rows_above_the_latest_linked_change_are_kept_out_of_scope() -> None:
     service: typing.Final = _service(_scope())
 
-    assert [[item.iid for item in row.merge_requests] for row in service.rows] == [[12], [11], [10], [9]]
-    assert [row.linked for row in service.rows] == [True, False, False, False]
+    assert [[item.iid for item in row.merge_requests] for row in service.rows] == [[], [12], [11], [10], [9]]
+    assert [row.linked for row in service.rows] == [False, True, False, False, False]
+    assert [row.in_scope for row in service.rows] == [False, True, True, True, True]
     assert service.release is not None
     assert service.release.state == "pending"
     assert service.release.tag is not None
     assert service.release.tag.name == "1.2.0"
+
+
+@pytest.mark.httpx2(assert_all_called=False)
+def test_tag_above_the_target_is_a_candidate_without_out_of_scope_issues(scoped: respx.Router) -> None:
+    scoped["tags"].respond(json=[{"name": "1.3.0", "commit": {"id": "head"}}, *TAGS])
+    scoped.get(f"{SERVICE_API}/pipelines", params={"ref": "1.3.0"}).respond(json=[])
+
+    candidates: typing.Final = _service(_scope()).candidates
+
+    assert [(item.tag.name, item.changes, [key.key for key in item.jira_keys]) for item in candidates] == [
+        ("1.3.0", 5, ["SHOP-12", "SHOP-13"]),
+        ("1.2.0", 4, ["SHOP-12", "SHOP-13"]),
+        ("1.1.0", 2, []),
+    ]
 
 
 @pytest.mark.httpx2(assert_all_called=False)
@@ -78,7 +94,8 @@ def test_release_tag_is_the_nearest_tag_above_an_untagged_target(scoped: respx.R
 
     service: typing.Final = _service(_scope())
 
-    assert [[item.iid for item in row.merge_requests] for row in service.rows] == [[11], [10], [9]]
+    assert [[item.iid for item in row.merge_requests] for row in service.rows] == [[], [12], [11], [10], [9]]
+    assert [row.in_scope for row in service.rows] == [False, False, True, True, True]
     assert service.release is not None
     assert service.release.tag is not None
     assert service.release.tag.name == "1.2.0"

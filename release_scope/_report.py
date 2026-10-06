@@ -4,7 +4,7 @@ import typing
 import pydantic
 
 
-SCHEMA_VERSION: typing.Final = 2
+SCHEMA_VERSION: typing.Final = 3
 
 
 class FailedJob(pydantic.BaseModel):
@@ -62,6 +62,7 @@ class Row(pydantic.BaseModel):
     environments: list[str]
     main_pipeline: PipelineState | None
     linked: bool = False
+    in_scope: bool = True
 
 
 class EnvironmentState(pydantic.BaseModel):
@@ -79,12 +80,20 @@ class Release(pydantic.BaseModel):
     pending_merge_requests: list[MergeRequestRef] = pydantic.Field(default_factory=list)
 
 
+class Candidate(pydantic.BaseModel):
+    tag: TagRef
+    compare_url: str
+    changes: int
+    jira_keys: list[JiraKeyRef]
+
+
 class Service(pydantic.BaseModel):
     project: str
     project_url: str
     default_branch: str | None = None
     environments: list[EnvironmentState] = pydantic.Field(default_factory=list)
     rows: list[Row] = pydantic.Field(default_factory=list)
+    candidates: list[Candidate] = pydantic.Field(default_factory=list)
     warnings: list[str] = pydantic.Field(default_factory=list)
     error: str | None = None
     release: Release | None = None
@@ -116,7 +125,7 @@ class JiraState(pydantic.BaseModel):
 
 
 class Report(pydantic.BaseModel):
-    schema_version: typing.Literal[2] = SCHEMA_VERSION
+    schema_version: typing.Literal[3] = SCHEMA_VERSION
     collected_at: datetime.datetime
     production_environment: str
     services: list[Service]
