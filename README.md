@@ -84,10 +84,10 @@ Every setting is an environment variable; nothing about a GitLab or Jira instanc
 
 The report is versioned by `schema_version`; the models live in
 [`release_scope/_report.py`](https://github.com/modern-python/release-scope/blob/main/release_scope/_report.py).
-Top-level `jira` is `null` without a Jira token; otherwise it holds `issues` by key (summary, status, status
-category, issue type, linked GitLab changes), the `missing` keys Jira did not return, and an `error` if a Jira
-request failed. Each service lists its `candidates`: the tags a release could ship, newest first, each with its pipeline, the
-number of rows it ships, the in-scope Jira keys of those rows, and the compare link from production. One row, trimmed:
+Top-level `jira` is `null` without a Jira token; otherwise it holds `issues` by key (summary, status, status category,
+issue type, linked GitLab changes), the `missing` keys Jira did not return, and an `error` if a Jira request failed.
+Each service lists its `candidates`: the tags a release could ship, newest first, each with its pipeline, the number of
+rows it ships, the in-scope Jira keys of those rows, and the compare link from production. One row, trimmed:
 
 ```json
 {
@@ -108,17 +108,18 @@ installed package and change only with it, so the page always matches the report
 `report.json` from next to itself; it needs a web server, not a `file://` URL.
 
 **Services** lists every service with a production deployment as one line: what production runs, the picked
-target, and its failed jobs. Opening a line shows the service's environments, warnings, and its rows with tags and
-their pipelines, merge requests or commits, Jira keys, environments, and failed jobs; rows out of scope are dimmed.
-Each tag has a **pick** button: picking makes it the service's target, highlights the rows it ships, and closes the
-line again. A `--jira` report starts with each service's release tag picked. Services without a production
-deployment are left out of the page.
+target, its failed jobs, and a mark when the range was cut at `RELEASE_SCOPE_MAX_COMMITS`. Opening a line shows the
+service's environments, warnings, and its rows with tags and their pipelines, merge requests or commits, Jira keys,
+environments, and failed jobs; rows out of scope are dimmed. Each tag has a **pick** button: picking makes it the
+service's target, highlights the rows it ships, and closes the line again. A `--jira` report starts with each
+service's release tag picked. Services without a production deployment are left out of the page.
 
 **Release** at the bottom turns the targets into three lists, each with a copy button and a text box to copy from by
 hand, since browsers allow the copy button only over HTTPS:
 
-- **Jira tasks**: the keys of every in-scope row from each target down to production, without duplicates, with
-  summary and status, flagging issues that are not done. Copy them one per line or as a JQL `key in (...)` clause.
+- **Jira tasks**: the keys of every in-scope row from each target down to production, without duplicates, with summary
+  and status, flagging issues that are not done. Copy them one per line or as a JQL `key in (...)` clause, each in its
+  own box.
 - **Tag pipelines**: the pipeline of each target, as a Markdown list.
 - **Compare**: a GitLab compare link per service from production to the target, as a Markdown list.
 

@@ -515,6 +515,7 @@ def test_range_spanning_pages_is_read_to_the_end(gitlab: respx.Router) -> None:
     service: typing.Final = _only_service(_collect())
 
     assert len(service.rows) == 5
+    assert not service.truncated
     assert [call.request.url.params["page"] for call in gitlab["commits"].calls] == ["1", "2"]
 
 
@@ -526,6 +527,7 @@ def test_long_range_is_truncated_with_a_warning(gitlab: respx.Router) -> None:
 
     assert [row.commits[0].sha for row in service.rows] == ["head", "c3"]
     assert service.warnings == ["Stopped after 2 commits; older changes are omitted."]
+    assert service.truncated
     assert gitlab["commits"].call_count == 1
 
 

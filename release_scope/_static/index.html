@@ -97,6 +97,7 @@
             </span>
             <span class="muted" x-text="lineDetails(service)"></span>
             <span x-text="failureCounts(service)"></span>
+            <span x-show="service.truncated" class="warn" title="Older changes were not collected; open for details">⚠️ truncated</span>
           </summary>
           <div class="body">
             <p>
@@ -205,6 +206,7 @@
             </template>
           </ul>
           <textarea readonly x-text="taskKeys"></textarea>
+          <textarea readonly x-text="taskJql"></textarea>
         </section>
         <section>
           <div class="out-head">

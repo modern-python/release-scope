@@ -81,6 +81,7 @@ Read `$out/site/report.json` and answer the user's question from it, briefly.
   `environments` already running it, `jira_keys`, and `main_pipeline` with `failed_jobs`. Tag pipelines carry their
   own `failed_jobs`.
 - A service with no rows is up to date with production.
+- `truncated: true`: the walk stopped at `RELEASE_SCOPE_MAX_COMMITS`, so the oldest candidates miss rows and keys.
 - `candidates` (newest first): the tags a release could ship, each with `tag` and its `pipeline`, `rows` (how many
   rows run from that tag down to production), `jira_keys` (the in-scope keys of those rows, without duplicates), and
   `compare_url`.

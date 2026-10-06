@@ -277,6 +277,7 @@ class CollectUseCase:
             project.id, f"{baseline}..{default_branch}", max_items=self.settings.max_commits
         )
         walk: typing.Final = _Walk(truncated=truncated)
+        service.truncated = truncated
         if truncated:
             service.warnings.append(f"Stopped after {self.settings.max_commits} commits; older changes are omitted.")
         if not commits:

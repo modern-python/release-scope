@@ -94,6 +94,7 @@ class Service(pydantic.BaseModel):
     environments: list[EnvironmentState] = pydantic.Field(default_factory=list)
     rows: list[Row] = pydantic.Field(default_factory=list)
     candidates: list[Candidate] = pydantic.Field(default_factory=list)
+    truncated: bool = False
     warnings: list[str] = pydantic.Field(default_factory=list)
     error: str | None = None
     release: Release | None = None
