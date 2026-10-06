@@ -340,9 +340,12 @@
       lineDetails(service) {
         const candidate = this.pickOf(service);
         if (candidate) {
-          return `${candidate.rows} of ${service.rows.length} merge requests or commits · ${this.plural(candidate.jira_keys.length, "task")}`;
+          return `${candidate.rows} of ${this.rowsLabel(service.rows.length)} · ${this.plural(candidate.jira_keys.length, "task")}`;
         }
-        return service.rows.length ? `${service.rows.length} merge requests or commits` : "";
+        return service.rows.length ? this.rowsLabel(service.rows.length) : "";
+      },
+      rowsLabel(count) {
+        return count === 1 ? "1 merge request or commit" : `${count} merge requests or commits`;
       },
       ships(service, index) {
         const tag = this.picks[service.project];
