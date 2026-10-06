@@ -25,6 +25,8 @@ from tests.payloads import (
     PRODUCTION_DEPLOYMENT,
     PUSH_PIPELINES,
     SERVICE,
+    SERVICE_API,
+    TAGS,
     commit,
     jira_issue,
     jira_page,
@@ -118,6 +120,18 @@ def test_each_tag_in_the_range_is_a_candidate_carrying_everything_down_to_produc
     ]
     assert candidates[0].tag.pipeline is not None
     assert candidates[0].tag.pipeline.id == 201
+
+
+def test_each_tag_of_a_row_is_a_candidate_shipping_the_same_rows(gitlab: respx.Router) -> None:
+    gitlab["tags"].respond(json=[{"name": "1.2.0-rc", "commit": {"id": "c3"}}, *TAGS])
+    gitlab.get(f"{SERVICE_API}/pipelines", params={"ref": "1.2.0-rc"}, name="pipeline:1.2.0-rc").respond(json=[])
+
+    candidates: typing.Final = _only_service(_collect()).candidates
+
+    assert [(item.tag.name, item.rows, [key.key for key in item.jira_keys]) for item in candidates[:2]] == [
+        ("1.2.0-rc", 4, ["SHOP-12", "SHOP-13"]),
+        ("1.2.0", 4, ["SHOP-12", "SHOP-13"]),
+    ]
 
 
 def test_candidate_compares_from_the_production_commit_when_production_runs_a_branch(gitlab: respx.Router) -> None:

@@ -74,7 +74,7 @@ def test_rows_above_the_latest_linked_change_are_kept_out_of_scope() -> None:
 @pytest.mark.httpx2(assert_all_called=False)
 def test_tag_above_the_target_is_a_candidate_without_out_of_scope_issues(scoped: respx.Router) -> None:
     scoped["tags"].respond(json=[{"name": "1.3.0", "commit": {"id": "head"}}, *TAGS])
-    scoped.get(f"{SERVICE_API}/pipelines", params={"ref": "1.3.0"}).respond(json=[])
+    scoped.get(f"{SERVICE_API}/pipelines", params={"ref": "1.3.0"}, name="pipeline:1.3.0").respond(json=[])
 
     candidates: typing.Final = _service(_scope()).candidates
 
