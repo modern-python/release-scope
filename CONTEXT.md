@@ -39,11 +39,17 @@ the row belongs to. It need not be in the report.
 The Jira issues a `--jira` run was given. Its services are the projects those issues link to.
 
 **Target**:
-In an issue scope, the newest row on the default branch whose merge request or commit an issue links to. Rows run
-from the production baseline to the target.
+In an issue scope, the newest row on the default branch whose merge request or commit an issue links to. Rows from
+the production baseline to the target are in scope; rows above it are kept, out of scope, so their tags can still be
+picked.
 
 **Release tag**:
 The nearest tag at or above the target: the earliest tag that ships it. Absent when a new tag is needed.
+
+**Candidate**:
+A tag in the range that a release could ship. It carries what shipping it means: the rows from its own down to the
+production baseline, the Jira keys of those rows that are in scope, its tag pipeline, and the compare link from
+production.
 
 **Settled fact**:
 Data GitLab will not change for the same key, and so the only data the cache may hold.

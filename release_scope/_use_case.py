@@ -6,6 +6,7 @@ import typing
 from urllib.parse import quote
 
 from release_scope._cache import Cache, CachedPipeline
+from release_scope._candidates import build_candidates
 from release_scope._errors import AuthError, ConfigError, GitLabError, JiraError
 from release_scope._gitlab import Commit, Deployment, GitLabApi, MergeRequest, Pipeline, Project
 from release_scope._jira import JiraApi
@@ -78,7 +79,7 @@ def _commit_ref(commit: Commit) -> CommitRef:
 
 
 def _row_keys(services: list[Service]) -> list[str]:
-    return sorted({key.key for service in services for row in service.rows for key in row.jira_keys})
+    return sorted({key.key for service in services for row in service.rows if row.in_scope for key in row.jira_keys})
 
 
 @dataclasses.dataclass(slots=True, kw_only=True)
@@ -254,9 +255,9 @@ class CollectUseCase:
             return service
 
         walk: typing.Final = self._walk(project, project.default_branch, production.sha, service, cache)
-        drafts, linked = walk.drafts, [False] * len(walk.drafts)
+        drafts, linked, in_scope = walk.drafts, [False] * len(walk.drafts), [True] * len(walk.drafts)
         if links is not None:
-            drafts, linked = self._scope_rows(project, project.default_branch, service, walk, links, cache)
+            drafts, linked, in_scope = self._scope_rows(project, project.default_branch, service, walk, links, cache)
         service.rows.extend(
             self._build_row(
                 project=project,
@@ -265,9 +266,10 @@ class CollectUseCase:
                 main_pipelines=walk.main_pipelines,
                 environments=service.environments,
                 cache=cache,
-            ).model_copy(update={"linked": is_linked})
-            for draft, is_linked in zip(drafts, linked, strict=True)
+            ).model_copy(update={"linked": is_linked, "in_scope": is_in_scope})
+            for draft, is_linked, is_in_scope in zip(drafts, linked, in_scope, strict=True)
         )
+        service.candidates.extend(build_candidates(service, production))
         return service
 
     def _walk(self, project: Project, default_branch: str, baseline: str, service: Service, cache: Cache) -> _Walk:
@@ -275,6 +277,7 @@ class CollectUseCase:
             project.id, f"{baseline}..{default_branch}", max_items=self.settings.max_commits
         )
         walk: typing.Final = _Walk(truncated=truncated)
+        service.truncated = truncated
         if truncated:
             service.warnings.append(f"Stopped after {self.settings.max_commits} commits; older changes are omitted.")
         if not commits:
@@ -299,15 +302,20 @@ class CollectUseCase:
         walk: _Walk,
         links: list[LinkedChange],
         cache: Cache,
-    ) -> tuple[list[RowDraft], list[bool]]:
+    ) -> tuple[list[RowDraft], list[bool], list[bool]]:
         target: typing.Final = self._link_target(project, default_branch, links, cache)
         service.warnings.extend(target.warnings)
         index: typing.Final = next(
             (position for position, draft in enumerate(walk.drafts) if target.matches(draft)), None
         )
         service.release = self._release(project, target, walk, index, cache)
-        drafts: typing.Final = walk.drafts[index:] if index is not None else []
-        return drafts, [target.matches(draft) for draft in drafts]
+        if index is None:
+            return [], [], []
+        return (
+            walk.drafts,
+            [target.matches(draft) for draft in walk.drafts],
+            [position >= index for position in range(len(walk.drafts))],
+        )
 
     def _link_target(
         self, project: Project, default_branch: str, links: list[LinkedChange], cache: Cache

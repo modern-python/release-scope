@@ -21,7 +21,7 @@
 Jira issues, failed jobs.
 
 For every service it reads the latest successful production deployment, walks the default branch down to that
-commit, and writes one JSON report: a row per merge request or direct commit, newest first, with the tags that
+commit, and writes a static site with one JSON report: a row per merge request or direct commit, newest first, with the tags that
 point into it, the environments running it, the Jira keys its MR mentions, and the failed jobs of its main-branch
 and tag pipelines. With a Jira token, it also reads the summary and status of every key in one batched search,
 and the GitLab merge requests and commits linked to each issue. GitLab's Jira integration adds those links to the
@@ -32,13 +32,14 @@ issue's Web links whenever a commit or MR mentions it; a link counts only if it 
 
 ```sh
 export RELEASE_SCOPE_GITLAB__ENDPOINT=https://gitlab.example.com
-export RELEASE_SCOPE_GITLAB__TOKEN=glpat-...          # read_api scope; api for publish
+export RELEASE_SCOPE_GITLAB__TOKEN=glpat-...          # read_api scope
 export RELEASE_SCOPE_ENVIRONMENTS='["prod", "preview"]'
 export RELEASE_SCOPE_PRODUCTION_ENVIRONMENT=prod
 
-uvx release-scope collect --group team/backend --output report.json --cache cache.json
+uvx release-scope collect --group team/backend --output public --cache cache.json
 ```
 
+`--output` is a directory: `collect` writes `report.json` there, next to the page that shows it (see Site).
 `--group` and `--project` are repeatable and can be mixed. The command exits `1` when any service failed to
 collect; the report is still written and names the error on that service. A service GitLab denies access to fails
 alone, and its error lists the project settings and member page to check. A project with CI/CD or Environments
@@ -51,11 +52,13 @@ and also exits `1`; the GitLab part is still written.
 `--jira` scopes the report to Jira issues instead of groups or projects, and needs the Jira settings:
 
 ```sh
-uvx release-scope collect --jira SHOP-140 --jira SHOP-141 --output report.json --cache cache.json
+uvx release-scope collect --jira SHOP-140 --jira SHOP-141 --output public --cache cache.json
 ```
 
-It reads the issues and their GitLab links, then collects every project they link to. In each project the rows run
-from the production baseline up to the latest linked change, so they show everything that ships with the issues. The service
+It reads the issues and their GitLab links, then collects every project they link to. In each project the rows from
+the production baseline up to the latest linked change are in scope: they show everything that ships with the issues.
+Rows above that change are kept with `in_scope: false`, so their tags can still be picked, but their Jira keys are
+neither looked up nor counted as tasks of a release. The service
 records the release state: `pending` with the nearest tag at or above that change (or none, when a new tag is
 needed), `in_production` when every linked merge request is already deployed, `not_merged` when only open merge
 requests link to it, or `not_found`. Open merge requests and merges into other branches are listed either way.
@@ -81,9 +84,10 @@ Every setting is an environment variable; nothing about a GitLab or Jira instanc
 
 The report is versioned by `schema_version`; the models live in
 [`release_scope/_report.py`](https://github.com/modern-python/release-scope/blob/main/release_scope/_report.py).
-Top-level `jira` is `null` without a Jira token; otherwise it holds `issues` by key (summary, status, status
-category, issue type, linked GitLab changes), the `missing` keys Jira did not return, and an `error` if a Jira
-request failed. One row, trimmed:
+Top-level `jira` is `null` without a Jira token; otherwise it holds `issues` by key (summary, status, status category,
+issue type, linked GitLab changes), the `missing` keys Jira did not return, and an `error` if a Jira request failed.
+Each service lists its `candidates`: the tags a release could ship, newest first, each with its pipeline, the number of
+rows it ships, the in-scope Jira keys of those rows, and the compare link from production. One row, trimmed:
 
 ```json
 {
@@ -97,60 +101,55 @@ request failed. One row, trimmed:
 }
 ```
 
-## Page
+## Site
 
-`render` turns a report into a Markdown page for a GitLab wiki, without calling GitLab:
+Besides `report.json`, `collect` writes `index.html` and its script into the output directory. They come from the
+installed package and change only with it, so the page always matches the report schema. The page loads
+`report.json` from next to itself; it needs a web server, not a `file://` URL.
 
-```sh
-uvx release-scope collect --group team/backend --output report.json --cache cache.json; \
-  uvx release-scope render report.json --output report.md
-```
+**Services** lists every service with a production deployment, and every service that failed to collect, as one
+line: what production runs, the picked tag, how many merge requests or commits and Jira tasks it ships, failed jobs,
+and a mark when the range was cut at `RELEASE_SCOPE_MAX_COMMITS`. Opening a line shows the service's environments,
+warnings, merge requests that are not merged yet, and its rows with tags and their pipelines, merge requests or
+commits, Jira keys, environments, and failed jobs; rows out of scope are dimmed. Each tag has a **pick** button:
+picking it highlights the rows it ships and closes the line again. A `--jira` report starts with each service's
+release tag picked. Services without a production deployment are left out of the page.
 
-The page opens with a table of the services that have pending changes or problems, with the ref each environment runs
-and a GitLab compare link from production to the newest pending tag (to the release tag in a `--jira` report);
-services already up to date collapse into one expandable table. Each service with changes then has a collapsible table
-of its rows: the tag linked to its pipeline, the merge requests or direct commit, Jira keys with summary and status,
-the other services its Jira issues link to, where the change is deployed, and the failed jobs of its main-branch
-and tag pipelines. With Jira issues, the summary table also counts the issues per service whose status is not done.
-A `--jira` report names its issues at the top, shows the tag to release per service, and marks the rows linked to
-the issues.
+**Release** at the bottom turns the picked tags into three lists, each with a copy button and a text box to copy from
+by hand, since browsers allow the copy button only over HTTPS:
 
-Chain the two commands with `;`, not `&&`: `collect` exits `1` when a service failed, which is exactly when the page
-should show it. Alert on the exit code of `collect`, not on whether to render. `render` fails only when it cannot
-read the report or write the page.
+- **Jira tasks**: the keys of every in-scope row from each picked tag down to production, without duplicates, with
+  summary and status, flagging issues that are not done. Copy them one per line or as a JQL `key in (...)` clause,
+  each in its own box.
+- **Tag pipelines**: the pipeline of each picked tag, as a Markdown list.
+- **Compare**: a GitLab compare link per service from production to the picked tag, as a Markdown list.
 
-## Wiki
+## GitLab Pages
 
-`publish` replaces the content of an existing page in a project wiki with a rendered page:
-
-```sh
-uvx release-scope publish report.md --project team/docs --page releases/backend
-```
-
-`--page` is the page slug, as in its URL after `/-/wikis/`. The page must already exist; `publish` never creates
-one, so create it once in GitLab. It keeps the page title and format, and skips the write when the content is
-unchanged, so a scheduled run does not add a page version every time. Publishing needs a token with the `api` scope
-whose user has at least the Developer role in the wiki's project; a denied token exits `3`, a missing page or any
-other failed request exits `4`. GitLab rejects pages larger than its wiki page size limit, 5 MB by default; the error
-then names the size of the page.
-
-A scheduled GitLab CI job keeps the page current. It publishes even when a service failed, then fails the job:
+A scheduled pipeline publishes the site with [GitLab Pages](https://docs.gitlab.com/user/project/pages/). Keep it in
+a project of its own, such as `team/release-report`: Pages serves only the site of the project that runs the job,
+and its members are who can view it. `collect` reads the services through the API, so they need no change.
 
 ```yaml
-release-page:
-  image: python:3.13-slim
+release-report:
+  image: ghcr.io/astral-sh/uv:python3.13-trixie-slim
   rules:
     - if: $CI_PIPELINE_SOURCE == "schedule"
   script:
-    - pip install 'release-scope>=0.4,<0.5'
-    - release-scope collect --group team/backend --output report.json || status=$?
-    - release-scope render report.json --output report.md
-    - release-scope publish report.md --project team/docs --page releases/backend
-    - exit "${status:-0}"
+    - uvx --from 'release-scope>=0.5,<0.6' release-scope collect --group team/backend --output public || [ $? -eq 1 ]
+  pages: true
 ```
 
-Set `RELEASE_SCOPE_GITLAB__ENDPOINT` and a masked `RELEASE_SCOPE_GITLAB__TOKEN` as CI/CD variables of the project
-that runs the job, along with the other settings.
+`|| [ $? -eq 1 ]` keeps the job green when only some services failed: the page shows their errors, and GitLab deploys
+Pages only from a successful job. A configuration error, a rejected token, or an unreachable group still fails the
+job and keeps the previous site. `pages: true` needs GitLab 17.6 and publishes `public` as the job artifact from 17.10;
+on older versions name the job `pages` and add `artifacts: {paths: [public]}`.
+
+Set `RELEASE_SCOPE_GITLAB__ENDPOINT` and a masked `RELEASE_SCOPE_GITLAB__TOKEN` as CI/CD variables of the project,
+along with the other settings, then add a pipeline schedule. Without [Pages access
+control](https://docs.gitlab.com/administration/pages/#access-control), which an administrator of a self-managed
+instance turns on, a Pages site is public to anyone who can reach it, even for a private project. With it, set
+**Settings > General > Visibility > Pages** to *Only project members*.
 
 ## Cache
 
@@ -167,8 +166,7 @@ requests and never changes the report.
 skill that runs `release-scope` through `uvx` and answers release questions from the report. Ask your coding agent
 what in the current repository has not reached production, what a group will ship with the next tag, or whether a
 Jira issue is released and which services it touches. For the current repository the skill takes `--project` from
-the git remote. It keeps the report and cache outside the repository, and publishes to a wiki page only when you ask
-for it and name the page.
+the git remote. It keeps the report and cache outside the repository.
 
 Install it with [skills](https://github.com/vercel-labs/skills):
 
@@ -177,4 +175,4 @@ npx skills add modern-python/release-scope
 ```
 
 The agent reads the same environment variables as the CLI, so set them first as described under Configuration.
-The skill runs `release-scope>=0.4,<0.5`, the range whose flags and report schema it describes.
+The skill runs `release-scope>=0.5,<0.6`, the range whose flags and report schema it describes.

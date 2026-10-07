@@ -1,6 +1,5 @@
 import functools
 import importlib.metadata
-import json
 import pathlib
 import typing
 
@@ -10,11 +9,9 @@ import typer
 from release_scope import ioc
 from release_scope._cache import Cache
 from release_scope._errors import ConfigError, ReleaseScopeError
-from release_scope._files import write_text_atomic
+from release_scope._files import write_site
 from release_scope._jira_keys import JIRA_KEY_PATTERN
-from release_scope._publish import PublishUseCase
-from release_scope._render import render_markdown
-from release_scope._report import SCHEMA_VERSION, Report
+from release_scope._report import Report
 from release_scope._use_case import CollectUseCase
 
 
@@ -63,12 +60,14 @@ def _exit_on_error(func: typing.Callable[_P, None]) -> typing.Callable[_P, None]
     return wrapper
 
 
-@MAIN_APP.command("collect", help="Collect pending changes per service into a JSON report.")
+@MAIN_APP.command("collect", help="Collect pending changes per service into a static site with a JSON report.")
 @_exit_on_error
 @modern_di_typer.inject
 def _collect_command(  # noqa: PLR0913, PLR0917
     use_case: typing.Annotated[CollectUseCase, modern_di_typer.FromDI(CollectUseCase)],
-    output: typing.Annotated[pathlib.Path, typer.Option("--output", "-o", help="Where to write the report JSON.")],
+    output: typing.Annotated[
+        pathlib.Path, typer.Option("--output", "-o", help="Directory for the site: index.html and report.json.")
+    ],
     group: typing.Annotated[
         list[str] | None, typer.Option("--group", "-g", help="GitLab group path; repeatable.")
     ] = None,
@@ -95,7 +94,7 @@ def _collect_command(  # noqa: PLR0913, PLR0917
         report = use_case.for_issues(keys=list(dict.fromkeys(jira)), cache=cache)
     else:
         report = use_case(groups=group or [], projects=project or [], include_subgroups=include_subgroups, cache=cache)
-    write_text_atomic(output, report.model_dump_json(indent=2))
+    write_site(output, report.model_dump_json(indent=2))
     if cache_path:
         cache.save(cache_path)
     failed: typing.Final = [service for service in report.services if service.error]
@@ -132,51 +131,6 @@ def _jira_errors(report: Report) -> list[str]:
     if report.jira.error:
         errors.append(report.jira.error)
     return errors
-
-
-@MAIN_APP.command("render", help="Render a JSON report as a Markdown page for a GitLab wiki.")
-def _render_command(
-    report_path: typing.Annotated[pathlib.Path, typer.Argument(help="Report JSON written by `collect`.")],
-    output: typing.Annotated[pathlib.Path, typer.Option("--output", "-o", help="Where to write the Markdown page.")],
-) -> None:
-    try:
-        raw = json.loads(report_path.read_bytes())
-        version = raw.get("schema_version") if isinstance(raw, dict) else None
-        if isinstance(version, int) and version < SCHEMA_VERSION:
-            typer.echo(
-                f"Error: Cannot read report {report_path}: schema_version {version} is not supported; "
-                "run collect again.",
-                err=True,
-            )
-            raise typer.Exit(code=ConfigError.exit_code)
-        report = Report.model_validate(raw)
-    except (OSError, ValueError) as exc:
-        typer.echo(f"Error: Cannot read report {report_path}: {type(exc).__name__}.", err=True)
-        raise typer.Exit(code=ConfigError.exit_code) from exc
-    try:
-        write_text_atomic(output, render_markdown(report))
-    except OSError as exc:
-        typer.echo(f"Error: Cannot write page {output}: {type(exc).__name__}.", err=True)
-        raise typer.Exit(code=ReleaseScopeError.exit_code) from exc
-    typer.echo(f"{len(report.services)} services -> {output}", err=True)
-
-
-@MAIN_APP.command("publish", help="Replace the content of an existing GitLab wiki page with a rendered page.")
-@_exit_on_error
-@modern_di_typer.inject
-def _publish_command(
-    use_case: typing.Annotated[PublishUseCase, modern_di_typer.FromDI(PublishUseCase)],
-    page_path: typing.Annotated[pathlib.Path, typer.Argument(help="Markdown page written by `render`.")],
-    project: typing.Annotated[str, typer.Option("--project", "-p", help="GitLab project path that holds the wiki.")],
-    page: typing.Annotated[str, typer.Option("--page", help="Slug of the wiki page, such as releases/backend.")],
-) -> None:
-    try:
-        content = page_path.read_text(encoding="utf-8")
-    except (OSError, ValueError) as exc:
-        typer.echo(f"Error: Cannot read page {page_path}: {type(exc).__name__}.", err=True)
-        raise typer.Exit(code=ConfigError.exit_code) from exc
-    published: typing.Final = use_case(project=project, slug=page, content=content)
-    typer.echo(f"{'Updated' if published.updated else 'Unchanged'} {published.url}", err=True)
 
 
 def main() -> None:

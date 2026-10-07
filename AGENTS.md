@@ -16,7 +16,9 @@ issue title.
 ## Architecture
 
 `_use_case.py` drives one run; `_gitlab.py` and `_jira.py` are the only modules that speak HTTP; `_rows.py` is pure and
-turns the range plus merge requests into rows; `_render.py` is pure and turns a report into the Markdown page. Tests
+turns the range plus merge requests into rows; `_candidates.py` is pure and turns a service's rows into the tags a
+release could ship. `_static/` is the site `collect` copies next to `report.json`: `index.html` with vendored Alpine.js,
+which has no tests, so check it in a browser against a report from the CLI tests. Tests
 mock GitLab and Jira only with respx routes (pytest-httpx2): the `gitlab` and `jira` fixtures in `tests/conftest.py`
 declare one named static route per call of the scenario in `tests/payloads.py`. A test changes a response by re-mocking a named route; add no fakes, callbacks,
 or stubs.
