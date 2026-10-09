@@ -251,10 +251,14 @@ class CollectUseCase:
             service.warnings.append("Project has no default branch.")
             return service
         if production is None:
-            service.warnings.append(f"No successful deployment to '{self.settings.production_environment}'.")
-            return service
+            service.warnings.append(
+                f"No successful deployment to '{self.settings.production_environment}'; "
+                f"rows run from the first commit of {project.default_branch}."
+            )
 
-        walk: typing.Final = self._walk(project, project.default_branch, production.sha, service, cache)
+        walk: typing.Final = self._walk(
+            project, project.default_branch, production.sha if production else None, service, cache
+        )
         drafts, linked, in_scope = walk.drafts, [False] * len(walk.drafts), [True] * len(walk.drafts)
         if links is not None:
             drafts, linked, in_scope = self._scope_rows(project, project.default_branch, service, walk, links, cache)
@@ -272,9 +276,13 @@ class CollectUseCase:
         service.candidates.extend(build_candidates(service, production))
         return service
 
-    def _walk(self, project: Project, default_branch: str, baseline: str, service: Service, cache: Cache) -> _Walk:
+    def _walk(
+        self, project: Project, default_branch: str, baseline: str | None, service: Service, cache: Cache
+    ) -> _Walk:
         commits, truncated = self.api.list_first_parent_commits(
-            project.id, f"{baseline}..{default_branch}", max_items=self.settings.max_commits
+            project.id,
+            f"{baseline}..{default_branch}" if baseline else default_branch,
+            max_items=self.settings.max_commits,
         )
         walk: typing.Final = _Walk(truncated=truncated)
         service.truncated = truncated

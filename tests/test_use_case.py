@@ -476,14 +476,18 @@ def test_project_listed_twice_is_collected_once(gitlab: respx.Router) -> None:
     assert [item.project for item in report.services] == ["team/svc"]
 
 
-@pytest.mark.httpx2(assert_all_called=False)
-def test_service_without_production_deployment_has_no_rows(gitlab: respx.Router) -> None:
+def test_service_without_production_deployment_lists_the_whole_default_branch(gitlab: respx.Router) -> None:
     gitlab["deploy:production"].respond(json=[])
 
     service: typing.Final = _only_service(_collect())
 
-    assert service.rows == []
-    assert service.warnings == ["No successful deployment to 'production'."]
+    assert gitlab["commits"].calls[0].request.url.params["ref_name"] == "main"
+    assert [row.commits[0].sha for row in service.rows] == ["head", "c3", "c2", "c1", "c0b"]
+    assert [(item.tag.name, item.rows, item.compare_url) for item in service.candidates] == [
+        ("1.2.0", 4, f"{ENDPOINT}/team/svc/-/commits/1.2.0"),
+        ("1.1.0", 2, f"{ENDPOINT}/team/svc/-/commits/1.1.0"),
+    ]
+    assert service.warnings == ["No successful deployment to 'production'; rows run from the first commit of main."]
 
 
 @pytest.mark.httpx2(assert_all_called=False)
