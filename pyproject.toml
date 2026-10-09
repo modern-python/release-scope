@@ -1,6 +1,6 @@
 [project]
 name = "release-scope"
-description = "Collect what sits between production and the default branch across GitLab services: tags, MRs, Jira keys, failed jobs"
+description = "Collect what sits between production and the default branch across GitLab services into a GitLab Pages site for picking release tags"
 authors = [{ name = "Artur Shiriev", email = "me@shiriev.ru" }]
 requires-python = ">=3.11,<4"
 license = "MIT"
