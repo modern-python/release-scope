@@ -1,10 +1,33 @@
 import datetime
+import enum
 import typing
 
 import pydantic
 
 
-SCHEMA_VERSION: typing.Final = 3
+SCHEMA_VERSION: typing.Final = 4
+
+
+class MessageCode(enum.StrEnum):
+    CI_DISABLED = "ci_disabled"
+    ENVIRONMENTS_DISABLED = "environments_disabled"
+    NO_DEFAULT_BRANCH = "no_default_branch"
+    NO_PRODUCTION = "no_production"
+    COMMITS_TRUNCATED = "commits_truncated"
+    TAGS_TRUNCATED = "tags_truncated"
+    MERGED_ELSEWHERE = "merged_elsewhere"
+    GITLAB_UNREACHABLE = "gitlab_unreachable"
+    GITLAB_STATUS = "gitlab_status"
+    GITLAB_DENIED = "gitlab_denied"
+    JIRA_TOKEN_REJECTED = "jira_token_rejected"
+    JIRA_STATUS = "jira_status"
+    JIRA_UNREACHABLE = "jira_unreachable"
+
+
+class Message(pydantic.BaseModel):
+    code: MessageCode
+    params: dict[str, str | int | list[str]] = pydantic.Field(default_factory=dict)
+    text: str
 
 
 class FailedJob(pydantic.BaseModel):
@@ -95,8 +118,8 @@ class Service(pydantic.BaseModel):
     rows: list[Row] = pydantic.Field(default_factory=list)
     candidates: list[Candidate] = pydantic.Field(default_factory=list)
     truncated: bool = False
-    warnings: list[str] = pydantic.Field(default_factory=list)
-    error: str | None = None
+    warnings: list[Message] = pydantic.Field(default_factory=list)
+    error: Message | None = None
     release: Release | None = None
 
 
@@ -122,11 +145,11 @@ class JiraIssue(pydantic.BaseModel):
 class JiraState(pydantic.BaseModel):
     issues: dict[str, JiraIssue] = pydantic.Field(default_factory=dict)
     missing: list[str] = pydantic.Field(default_factory=list)
-    error: str | None = None
+    error: Message | None = None
 
 
 class Report(pydantic.BaseModel):
-    schema_version: typing.Literal[3] = SCHEMA_VERSION
+    schema_version: typing.Literal[4] = SCHEMA_VERSION
     collected_at: datetime.datetime
     production_environment: str
     services: list[Service]

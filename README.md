@@ -86,6 +86,7 @@ The report is versioned by `schema_version`; the models live in
 [`release_scope/_report.py`](https://github.com/modern-python/release-scope/blob/main/release_scope/_report.py).
 Top-level `jira` is `null` without a Jira token; otherwise it holds `issues` by key (summary, status, status category,
 issue type, linked GitLab changes), the `missing` keys Jira did not return, and an `error` if a Jira request failed.
+Warnings and errors, on services and in `jira`, are messages: a `code`, its `params`, and the English `text`.
 Each service lists its `candidates`: the tags a release could ship, newest first, each with its pipeline, the number of
 rows it ships, the in-scope Jira keys of those rows, and the compare link from production, or the tag's commit history
 when the service has no production deployment. One row, trimmed:
@@ -110,7 +111,8 @@ installed package and change only with it, so the page always matches the report
 
 Switches at the top pick the language, English or Russian, and the theme: as in the system, light, or dark. The page
 starts in the browser's language and remembers both choices in the browser. The copied lists and release post follow
-the language; warnings and errors from `collect`, and texts from GitLab and Jira, stay as written.
+the language, and so do warnings and errors from `collect`; texts from GitLab and Jira, such as titles, statuses and
+Jira's own error details, stay as written.
 
 **Services** lists every service with a production deployment or with rows, and every service that failed to collect,
 as one line: what production runs, the picked tag, how many merge requests or commits and Jira tasks it ships, failed jobs
@@ -150,7 +152,7 @@ release-report:
   rules:
     - if: $CI_PIPELINE_SOURCE == "schedule"
   script:
-    - uvx --from 'release-scope>=0.5,<0.6' release-scope collect --group team/backend --output public || [ $? -eq 1 ]
+    - uvx --from 'release-scope>=0.6,<0.7' release-scope collect --group team/backend --output public || [ $? -eq 1 ]
   pages: true
 ```
 
@@ -189,4 +191,4 @@ npx skills add modern-python/release-scope
 ```
 
 The agent reads the same environment variables as the CLI, so set them first as described under Configuration.
-The skill runs `release-scope>=0.5,<0.6`, the range whose flags and report schema it describes.
+The skill runs `release-scope>=0.6,<0.7`, the range whose flags and report schema it describes.

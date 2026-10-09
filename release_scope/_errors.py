@@ -1,5 +1,7 @@
 import typing
 
+from release_scope._report import Message
+
 
 class ReleaseScopeError(Exception):
     exit_code: typing.ClassVar[int] = 1
@@ -24,4 +26,6 @@ class GitLabError(ReleaseScopeError):
 
 
 class JiraError(ReleaseScopeError):
-    pass
+    def __init__(self, message: Message) -> None:
+        super().__init__(message.text)
+        self.message = message

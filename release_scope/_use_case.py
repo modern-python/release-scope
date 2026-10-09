@@ -12,7 +12,15 @@ from release_scope._gitlab import Commit, Deployment, GitLabApi, MergeRequest, P
 from release_scope._jira import JiraApi
 from release_scope._jira_keys import extract_jira_keys
 from release_scope._links import parse_gitlab_link
-from release_scope._messages import explain_failure, skip_reason
+from release_scope._messages import (
+    commits_truncated,
+    explain_failure,
+    merged_elsewhere,
+    no_default_branch,
+    no_production,
+    skip_reason,
+    tags_truncated,
+)
 from release_scope._report import (
     CommitRef,
     EnvironmentState,
@@ -22,6 +30,7 @@ from release_scope._report import (
     JiraState,
     LinkedChange,
     MergeRequestRef,
+    Message,
     PipelineState,
     Release,
     Report,
@@ -95,7 +104,7 @@ class _LinkTarget:
     merged: set[int]
     shas: list[str]
     pending: list[MergeRequestRef]
-    warnings: list[str]
+    warnings: list[Message]
 
     def matches(self, draft: RowDraft) -> bool:
         return any(item.iid in self.merged for item in draft.merge_requests) or any(
@@ -159,7 +168,8 @@ class CollectUseCase:
         try:
             project: typing.Final = self.api.get_project(path)
         except GitLabError as exc:
-            return Service(project=path, project_url=links[0].project_url, error=f"{path}: {exc}")
+            project_url: typing.Final = links[0].project_url
+            return Service(project=path, project_url=project_url, error=explain_failure(path, project_url, exc))
         return self._collect_or_explain(project, cache, links=links)
 
     def _collect_or_explain(self, project: Project, cache: Cache, *, links: list[LinkedChange] | None) -> Service:
@@ -168,7 +178,9 @@ class CollectUseCase:
         except GitLabError as exc:
             cache.keep_project(project.id)
             return Service(
-                project=project.path_with_namespace, project_url=project.web_url, error=explain_failure(project, exc)
+                project=project.path_with_namespace,
+                project_url=project.web_url,
+                error=explain_failure(project.path_with_namespace, project.web_url, exc),
             )
 
     def _read_issues(self, jira: JiraApi, keys: collections.abc.Sequence[str]) -> JiraState:
@@ -178,7 +190,7 @@ class CollectUseCase:
         try:
             issues: typing.Final = {issue.key: issue for issue in jira.search_issues(keys)}
         except JiraError as exc:
-            state.error = str(exc)
+            state.error = exc.message
             return state
         for key in keys:
             issue = issues.get(key)
@@ -198,7 +210,7 @@ class CollectUseCase:
             for key, issue in state.issues.items():
                 issue.links = self._linked_changes(jira, key)
         except JiraError as exc:
-            state.error = str(exc)
+            state.error = exc.message
         return state
 
     def _linked_changes(self, jira: JiraApi, key: str) -> list[LinkedChange]:
@@ -248,13 +260,10 @@ class CollectUseCase:
             (item for item in service.environments if item.name == self.settings.production_environment), None
         )
         if project.default_branch is None:
-            service.warnings.append("Project has no default branch.")
+            service.warnings.append(no_default_branch())
             return service
         if production is None:
-            service.warnings.append(
-                f"No successful deployment to '{self.settings.production_environment}'; "
-                f"rows run from the first commit of {project.default_branch}."
-            )
+            service.warnings.append(no_production(self.settings.production_environment, project.default_branch))
 
         walk: typing.Final = self._walk(
             project, project.default_branch, production.sha if production else None, service, cache
@@ -287,14 +296,14 @@ class CollectUseCase:
         walk: typing.Final = _Walk(truncated=truncated)
         service.truncated = truncated
         if truncated:
-            service.warnings.append(f"Stopped after {self.settings.max_commits} commits; older changes are omitted.")
+            service.warnings.append(commits_truncated(self.settings.max_commits))
         if not commits:
             return walk
         since: typing.Final = min(commit.committed_date for commit in commits)
         walk.drafts = group_rows(commits, self._commit_merge_requests(project, default_branch, commits, since, cache))
-        tags, tags_truncated = self.api.list_tags(project.id)
-        if tags_truncated:
-            service.warnings.append("Tag list was truncated; some tags may be missing from rows.")
+        tags, tag_list_cut = self.api.list_tags(project.id)
+        if tag_list_cut:
+            service.warnings.append(tags_truncated())
         for tag in tags:
             walk.tags_by_sha.setdefault(tag.commit.id, []).append(tag.name)
         walk.main_pipelines = self._latest_by_sha(
@@ -330,7 +339,7 @@ class CollectUseCase:
     ) -> _LinkTarget:
         merged: typing.Final[set[int]] = set()
         pending: typing.Final[list[MergeRequestRef]] = []
-        warnings: typing.Final[list[str]] = []
+        warnings: typing.Final[list[Message]] = []
         for link in links:
             if link.iid is None:
                 continue
@@ -338,9 +347,7 @@ class CollectUseCase:
             if merge_request.state != "merged":
                 pending.append(_merge_request_ref(merge_request))
             elif merge_request.target_branch != default_branch:
-                warnings.append(
-                    f"!{merge_request.iid} was merged into {merge_request.target_branch}, not {default_branch}."
-                )
+                warnings.append(merged_elsewhere(merge_request.iid, merge_request.target_branch, default_branch))
             else:
                 merged.add(merge_request.iid)
         return _LinkTarget(

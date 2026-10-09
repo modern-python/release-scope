@@ -8,7 +8,7 @@ import respx
 from release_scope._cache import Cache
 from release_scope._gitlab import GitLabApi
 from release_scope._jira import JiraApi
-from release_scope._report import Report, Service
+from release_scope._report import Message, MessageCode, Report, Service
 from release_scope._settings import GitLabConfig, Settings
 from release_scope._use_case import CollectUseCase
 from tests.payloads import (
@@ -52,9 +52,13 @@ def test_scope_collects_every_service_the_issues_link_to() -> None:
 
     assert report.jira_scope == ["SHOP-12"]
     assert [item.project for item in report.services] == ["team/svc", "team/web", "team/worker"]
-    assert _service(report, "team/web").error == "team/web: GitLab returned 404 for /api/v4/projects/team/web."
+    assert _service(report, "team/web").error == Message(
+        code=MessageCode.GITLAB_STATUS,
+        params={"project": "team/web", "resource": "project", "status": 404},
+        text="team/web: GitLab returned 404 for the project.",
+    )
     assert _service(report, "team/web").project_url == f"{ENDPOINT}/team/web"
-    assert _service(report, "team/worker").warnings[0].startswith("CI/CD is disabled")
+    assert _service(report, "team/worker").warnings[0].code == MessageCode.CI_DISABLED
 
 
 @pytest.mark.httpx2(assert_all_called=False)
@@ -139,7 +143,13 @@ def test_open_and_off_branch_merge_requests_are_reported(scoped: respx.Router) -
     assert service.release is not None
     assert service.release.state == "not_merged"
     assert [item.iid for item in service.release.pending_merge_requests] == [13]
-    assert service.warnings == ["!14 was merged into release/1.x, not main."]
+    assert service.warnings == [
+        Message(
+            code=MessageCode.MERGED_ELSEWHERE,
+            params={"iid": 14, "target_branch": "release/1.x", "default_branch": "main"},
+            text="!14 was merged into release/1.x, not main.",
+        )
+    ]
 
 
 @pytest.mark.httpx2(assert_all_called=False)
@@ -198,6 +208,7 @@ def test_scope_stops_when_jira_fails(scoped: respx.Router) -> None:
     assert report.services == []
     assert report.jira is not None
     assert report.jira.error is not None
+    assert report.jira.error.code == MessageCode.JIRA_TOKEN_REJECTED
 
 
 @pytest.mark.httpx2(assert_all_called=False)
@@ -216,4 +227,6 @@ def test_a_failing_scoped_service_keeps_the_others(scoped: respx.Router) -> None
 
     report: typing.Final = _scope()
 
-    assert _service(report).error == "team/svc: GitLab returned 500 for merge requests."
+    error: typing.Final = _service(report).error
+    assert error is not None
+    assert error.text == "team/svc: GitLab returned 500 for merge requests."

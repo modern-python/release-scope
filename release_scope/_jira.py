@@ -6,6 +6,7 @@ import httpware
 import pydantic
 
 from release_scope._errors import JiraError
+from release_scope._messages import jira_status, jira_token_rejected, jira_unreachable
 
 
 _SEARCH: typing.Final = "/rest/api/2/search"
@@ -66,15 +67,12 @@ def _error_messages(exc: httpware.StatusError) -> str:
     return " ".join(str(message) for message in messages)
 
 
-def _translate(exc: httpware.ClientError, *, target: str) -> JiraError:
+def _translate(exc: httpware.ClientError, *, issue: str | None) -> JiraError:
     if isinstance(exc, httpware.UnauthorizedError):
-        return JiraError("Jira rejected the token (401). Check that it is valid and not expired.")
+        return JiraError(jira_token_rejected())
     if isinstance(exc, httpware.StatusError):
-        status: typing.Final = exc.response.status_code
-        details: typing.Final = _error_messages(exc)
-        suffix: typing.Final = f": {details.rstrip('.')}." if details else "."
-        return JiraError(f"Jira returned {status} for {target}{suffix}")
-    return JiraError(f"Jira request for {target} failed: {type(exc).__name__}.")
+        return JiraError(jira_status(exc.response.status_code, _error_messages(exc).rstrip("."), issue))
+    return JiraError(jira_unreachable(type(exc).__name__, issue))
 
 
 def _batches(keys: collections.abc.Sequence[str]) -> collections.abc.Iterator[collections.abc.Sequence[str]]:
@@ -106,7 +104,7 @@ class JiraApi:
             try:
                 page = self.http.post(_SEARCH, json=body, response_model=_SearchResults)
             except httpware.ClientError as exc:
-                raise _translate(exc, target="the issue search") from exc
+                raise _translate(exc, issue=None) from exc
             issues.extend(page.issues)
             if not page.issues or len(issues) >= page.total:
                 return issues
@@ -115,4 +113,4 @@ class JiraApi:
         try:
             return self.http.get(f"{_ISSUE}/{key}/remotelink", response_model=_RemoteLinks).root
         except httpware.ClientError as exc:
-            raise _translate(exc, target=f"the remote links of {key}") from exc
+            raise _translate(exc, issue=key) from exc

@@ -55,6 +55,7 @@
   .muted { color: var(--muted); }
   .bad { color: var(--bad); }
   .warn { color: var(--warn); }
+  .message { white-space: pre-line; }
   .scroll { overflow-x: auto; }
   .outputs { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px; margin-top: 16px; }
   .outputs .wide { grid-column: 1 / -1; }
@@ -114,8 +115,8 @@
           </li>
         </template>
       </ul>
-      <template x-for="message in problems" :key="message">
-        <p class="bad" x-text="message"></p>
+      <template x-for="item in problems" :key="item.text">
+        <p class="bad message" x-text="message(item)"></p>
       </template>
 
       <h2 x-text="t('services')"></h2>
@@ -142,9 +143,9 @@
                 <span> · <span x-text="item.name"></span> <a :href="item.deployment_url" x-text="item.ref"></a></span>
               </template>
             </p>
-            <p x-show="service.error" class="bad" x-text="service.error"></p>
-            <template x-for="warning in service.warnings" :key="warning">
-              <p class="warn" x-text="warning"></p>
+            <p x-show="service.error" class="bad message" x-text="service.error && message(service.error)"></p>
+            <template x-for="warning in service.warnings" :key="warning.text">
+              <p class="warn message" x-text="message(warning)"></p>
             </template>
             <p x-show="service.release && service.release.pending_merge_requests.length">
               <span x-text="t('notMerged')"></span>
@@ -426,6 +427,42 @@
     },
   };
 
+  const PERMISSIONS = "Visibility, project features, permissions";
+  const RESOURCES_RU = {
+    project: "проекта",
+    deployments: "деплоев",
+    pipelines: "пайплайнов",
+    repository: "репозитория",
+    merge_requests: "MR",
+  };
+  const resourceRu = (p) => RESOURCES_RU[p.resource] ?? "данных проекта";
+  const jiraTargetRu = (p) => (p.issue ? `удалённых ссылок ${p.issue}` : "поиска задач");
+  const MESSAGES = {
+    ru: {
+      ci_disabled: (p) =>
+        `CI/CD выключен, поэтому пайплайнов и деплоев нет. Включите его: ${p.settings_url} → ${PERMISSIONS} → CI/CD.`,
+      environments_disabled: (p) =>
+        `Environments выключены, поэтому деплоев нет. Включите их: ${p.settings_url} → ${PERMISSIONS} → Environments.`,
+      no_default_branch: () => "У проекта нет основной ветки.",
+      no_production: (p) =>
+        `Нет успешного деплоя на «${p.environment}»; строки идут от первого коммита ${p.branch}.`,
+      commits_truncated: (p) => `Остановились на ${p.max_commits} коммитах; более старые изменения не показаны.`,
+      tags_truncated: () => "Список тегов обрезан; у части строк теги могут не показываться.",
+      merged_elsewhere: (p) => `!${p.iid} влит в ${p.target_branch}, а не в ${p.default_branch}.`,
+      gitlab_unreachable: (p) => `${p.project}: запрос ${resourceRu(p)} к GitLab не удался (${p.reason}).`,
+      gitlab_status: (p) => `${p.project}: GitLab вернул ${p.status} на запрос ${resourceRu(p)}.`,
+      gitlab_denied: (p) =>
+        [
+          `${p.project}: GitLab запретил запрос ${resourceRu(p)} (403). Проверьте, что:`,
+          ...p.features.map((feature) => `- включено «${feature}»: ${p.settings_url} → ${PERMISSIONS} → ${feature}`),
+          `- у пользователя токена есть роль с доступом к ним: ${p.members_url}`,
+        ].join("\n"),
+      jira_token_rejected: () => "Jira отклонила токен (401). Проверьте, что он действителен и не истёк.",
+      jira_status: (p) => `Jira вернула ${p.status} на запрос ${jiraTargetRu(p)}${p.detail ? `: ${p.detail}.` : "."}`,
+      jira_unreachable: (p) => `Запрос ${jiraTargetRu(p)} к Jira не удался: ${p.reason}.`,
+    },
+  };
+
   const PLURALS = Object.fromEntries(Object.keys(STRINGS).map((lang) => [lang, new Intl.PluralRules(lang)]));
 
   const stored = (key) => {
@@ -478,6 +515,10 @@
           text = text[form] ?? text.many ?? text.other;
         }
         return text.replace(/\{(\w+)\}/g, (match, name) => (name in params ? params[name] : match));
+      },
+      message(item) {
+        const render = MESSAGES[this.lang] && MESSAGES[this.lang][item.code];
+        return render ? render(item.params) : item.text;
       },
       setLang(lang) {
         this.lang = lang;
