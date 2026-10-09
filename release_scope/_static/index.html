@@ -93,7 +93,7 @@
       <h2>Services</h2>
       <p x-show="pickable.length" class="muted">Open a service and pick the tag to release: it ships every merge request and commit from its row down to production. The address keeps the picks, so share it to share them.</p>
       <p x-show="ignored" class="warn" x-text="ignored"></p>
-      <template x-for="service in deployed" :key="service.project">
+      <template x-for="service in listed" :key="service.project">
         <details class="service" name="services">
           <summary>
             <span class="name" x-text="service.project"></span>
@@ -298,11 +298,11 @@
       get collectedAt() {
         return this.report.collected_at.slice(0, 16).replace("T", " ");
       },
-      get deployed() {
-        return this.report.services.filter((service) => service.error || this.production(service));
+      get listed() {
+        return this.report.services.filter((service) => service.error || this.production(service) || service.rows.length);
       },
       get pickable() {
-        return this.deployed.filter((service) => service.candidates.length);
+        return this.listed.filter((service) => service.candidates.length);
       },
       get problems() {
         const jira = this.report.jira;
@@ -432,10 +432,11 @@
       },
       productionRef(service) {
         const production = this.production(service);
-        if (!production) return "";
+        if (!production) return "not in production";
         return production.tag ? production.ref : production.sha.slice(0, 8);
       },
       compareLabel({ service, candidate }) {
+        if (!this.production(service)) return `commits to ${candidate.tag.name}`;
         return `${this.productionRef(service)}...${candidate.tag.name}`;
       },
       pipelineIcon(pipeline) {
