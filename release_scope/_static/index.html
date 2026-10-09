@@ -43,6 +43,7 @@
   .warn { color: var(--warn); }
   .scroll { overflow-x: auto; }
   .outputs { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px; margin-top: 16px; }
+  .outputs .wide { grid-column: 1 / -1; }
   .out-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
   tr.out-of-scope td { opacity: 0.55; }
   tr.shipped td { background: color-mix(in srgb, var(--accent) 12%, transparent); }
@@ -84,7 +85,8 @@
       </template>
 
       <h2>Services</h2>
-      <p x-show="pickable.length" class="muted">Open a service and pick the tag to release: it ships every merge request and commit from its row down to production.</p>
+      <p x-show="pickable.length" class="muted">Open a service and pick the tag to release: it ships every merge request and commit from its row down to production. The address keeps the picks, so share it to share them.</p>
+      <p x-show="ignored" class="warn" x-text="ignored"></p>
       <template x-for="service in deployed" :key="service.project">
         <details class="service" name="services">
           <summary>
@@ -242,6 +244,13 @@
           </ul>
           <textarea readonly x-text="compareMarkdown"></textarea>
         </section>
+        <section class="wide">
+          <div class="out-head">
+            <h3>Release post</h3>
+            <button type="button" @click="copy(releasePost)">Copy</button>
+          </div>
+          <textarea readonly rows="12" x-text="releasePost"></textarea>
+        </section>
       </div>
 
       <p class="muted">Legend: ✅ success · ❌ failed · 🔄 running · ⏭ canceled or skipped · ⚠️ no pipeline</p>
@@ -259,6 +268,7 @@
       report: null,
       failure: "",
       notice: "",
+      ignored: "",
       picks: {},
 
       async init() {
@@ -271,6 +281,8 @@
             this.picks[service.project] = service.candidates.some((item) => item.tag.name === tag) ? tag : "";
           }
           this.report = report;
+          this.readHash();
+          window.addEventListener("hashchange", () => this.readHash());
         } catch (error) {
           this.failure = `Cannot load the report: ${error.message}.`;
         }
@@ -321,6 +333,16 @@
           })
           .join("\n");
       },
+      get releasePost() {
+        const services = this.picked.map((item) => {
+          const pipeline = item.candidate.tag.pipeline;
+          const build = pipeline ? `[pipeline #${pipeline.id}](${pipeline.url}) ${pipeline.status}` : "no pipeline";
+          const compare = `[${this.compareLabel(item)}](${item.candidate.compare_url})`;
+          return `- ${item.service.project} ${item.candidate.tag.name}: ${compare} · ${build}`;
+        });
+        const tasks = this.tasks.map((task) => `- [${task.key}](${task.url})${task.issue ? " " + task.issue.summary : ""}`);
+        return ["**Services**", ...services, "", `**Jira tasks (${tasks.length})**`, ...(tasks.length ? tasks : ["- none"])].join("\n");
+      },
       get compareMarkdown() {
         return this.picked
           .map((item) => `- ${item.service.project}: [${this.compareLabel(item)}](${item.candidate.compare_url})`)
@@ -330,6 +352,36 @@
       pick(service, tag, element) {
         this.picks[service.project] = tag;
         element.closest("details").open = false;
+        this.writeHash();
+      },
+      readHash() {
+        const decode = (value) => {
+          try {
+            return decodeURIComponent(value);
+          } catch {
+            return value;
+          }
+        };
+        const wanted = new Map(
+          location.hash.slice(1).split("&").filter(Boolean)
+            .map((part) => part.split("=", 2).map(decode)),
+        );
+        if (wanted.size) {
+          for (const service of this.pickable) {
+            const tag = wanted.get(service.project) || "";
+            const known = !tag || service.candidates.some((item) => item.tag.name === tag);
+            this.picks[service.project] = known ? tag : "";
+            if (known) wanted.delete(service.project);
+          }
+        }
+        const unknown = [...wanted].map(([project, tag]) => (tag ? `${project} ${tag}` : project));
+        this.ignored = unknown.length ? `Ignored picks from the address that are not in this report: ${unknown.join(", ")}.` : "";
+        this.writeHash();
+      },
+      writeHash() {
+        const encode = (value) => encodeURIComponent(value).replaceAll("%2F", "/");
+        const hash = this.picked.map(({ service, candidate }) => `${encode(service.project)}=${encode(candidate.tag.name)}`).join("&");
+        history.replaceState(null, "", hash ? `#${hash}` : location.pathname + location.search);
       },
       pickOf(service) {
         return service.candidates.find((item) => item.tag.name === this.picks[service.project]);
