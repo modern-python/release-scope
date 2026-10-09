@@ -4,18 +4,19 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Release scope</title>
+<base target="_blank">
 <script>
   if (!/(\/|\.html)$/.test(location.pathname)) location.replace(location.pathname + "/" + location.search + location.hash);
 </script>
 <style>
   :root {
     --bg: #ffffff; --fg: #1f2328; --muted: #656d76; --border: #d0d7de; --panel: #f6f8fa;
-    --accent: #0969da; --bad: #cf222e; --warn: #9a6700;
+    --accent: #0969da; --bad: #cf222e; --warn: #9a6700; --good: #1a7f37;
   }
   @media (prefers-color-scheme: dark) {
     :root {
       --bg: #0d1117; --fg: #e6edf3; --muted: #8d96a0; --border: #30363d; --panel: #161b22;
-      --accent: #4493f8; --bad: #f85149; --warn: #d29922;
+      --accent: #4493f8; --bad: #f85149; --warn: #d29922; --good: #3fb950;
     }
   }
   [x-cloak] { display: none !important; }
@@ -58,6 +59,10 @@
   .service .body { padding: 8px 12px; }
   .service .body > p:first-child { margin-top: 0; }
   .picked-tag { font-weight: 600; }
+  .status { display: inline-block; padding: 0 8px; border: 1px solid currentColor; border-radius: 10px; font-size: 12px;
+    font-weight: 600; white-space: nowrap; color: var(--muted); }
+  .status-indeterminate { color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+  .status-done { color: var(--good); background: color-mix(in srgb, var(--good) 12%, transparent); }
   button.picked { border-color: var(--accent); color: var(--accent); }
 </style>
 </head>
@@ -76,7 +81,8 @@
         <template x-for="key in report.jira_scope" :key="key">
           <li>
             <a :href="issue(key) && issue(key).url" x-text="key"></a>
-            <span x-text="issue(key) ? issue(key).summary + ' · ' + issue(key).status : 'not found in Jira'"></span>
+            <span x-show="issue(key)" :class="statusClass(issue(key))" x-text="issue(key) && issue(key).status"></span>
+            <span x-text="issue(key) ? issue(key).summary : 'not found in Jira'"></span>
           </li>
         </template>
       </ul>
@@ -157,7 +163,8 @@
                         <template x-for="key in row.jira_keys" :key="key.key">
                           <div>
                             <a :href="key.url" x-text="key.key"></a>
-                            <span x-text="issue(key.key) ? issue(key.key).summary + ' · ' + issue(key.key).status : ''"></span>
+                            <span x-show="issue(key.key)" :class="statusClass(issue(key.key))" x-text="issue(key.key) && issue(key.key).status"></span>
+                            <span x-text="issue(key.key) ? issue(key.key).summary : ''"></span>
                           </div>
                         </template>
                       </td>
@@ -167,7 +174,7 @@
                           <div>
                             <span x-text="line.label"></span>
                             <a :href="line.url" x-text="line.name"></a>
-                            <span x-show="line.allowed" class="muted">(allowed)</span>
+                            <span x-show="line.allowed" class="muted">(allowed to fail)</span>
                           </div>
                         </template>
                       </td>
@@ -201,8 +208,8 @@
             <template x-for="task in tasks" :key="task.key">
               <li>
                 <a :href="task.url" x-text="task.key"></a>
-                <span x-text="task.issue ? task.issue.summary + ' · ' + task.issue.status : ''"></span>
-                <span x-show="task.issue && task.issue.status_category !== 'done'" class="warn">not done</span>
+                <span x-show="task.issue" :class="statusClass(task.issue)" x-text="task.issue && task.issue.status"></span>
+                <span x-text="task.issue ? task.issue.summary : ''"></span>
                 <span x-show="isMissing(task.key)" class="warn">not found in Jira</span>
               </li>
             </template>
@@ -411,6 +418,9 @@
       issue(key) {
         return this.report.jira ? this.report.jira.issues[key] : undefined;
       },
+      statusClass(issue) {
+        return issue ? `status status-${issue.status_category || "new"}` : "";
+      },
       isMissing(key) {
         return Boolean(this.report.jira && this.report.jira.missing.includes(key));
       },
@@ -439,7 +449,7 @@
         const jobs = pipelines.filter(Boolean).flatMap((pipeline) => pipeline.failed_jobs);
         const allowed = jobs.filter((job) => job.allow_failure).length;
         const blocking = jobs.length - allowed;
-        return [blocking ? `❌ ${blocking}` : "", allowed ? `⚠️ ${allowed} allowed` : ""].filter(Boolean).join(" · ");
+        return [blocking ? `❌ ${blocking} failed` : "", allowed ? `${allowed} failed, allowed to fail` : ""].filter(Boolean).join(" · ");
       },
       failedJobs(row) {
         const lines = [];
