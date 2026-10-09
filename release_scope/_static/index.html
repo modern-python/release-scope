@@ -7,17 +7,28 @@
 <base target="_blank">
 <script>
   if (!/(\/|\.html)$/.test(location.pathname)) location.replace(location.pathname + "/" + location.search + location.hash);
+  try {
+    const theme = localStorage.getItem("release-scope-theme");
+    if (theme === "light" || theme === "dark") document.documentElement.dataset.theme = theme;
+  } catch {}
 </script>
 <style>
   :root {
     --bg: #ffffff; --fg: #1f2328; --muted: #656d76; --border: #d0d7de; --panel: #f6f8fa;
     --accent: #0969da; --bad: #cf222e; --warn: #9a6700; --good: #1a7f37;
+    color-scheme: light;
   }
   @media (prefers-color-scheme: dark) {
-    :root {
+    :root:not([data-theme="light"]) {
       --bg: #0d1117; --fg: #e6edf3; --muted: #8d96a0; --border: #30363d; --panel: #161b22;
       --accent: #4493f8; --bad: #f85149; --warn: #d29922; --good: #3fb950;
+      color-scheme: dark;
     }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0d1117; --fg: #e6edf3; --muted: #8d96a0; --border: #30363d; --panel: #161b22;
+    --accent: #4493f8; --bad: #f85149; --warn: #d29922; --good: #3fb950;
+    color-scheme: dark;
   }
   [x-cloak] { display: none !important; }
   * { box-sizing: border-box; }
@@ -37,8 +48,10 @@
   summary { cursor: pointer; }
   textarea { width: 100%; min-height: 72px; font: 12px ui-monospace, monospace; background: var(--panel);
     color: var(--fg); border: 1px solid var(--border); border-radius: 6px; padding: 6px; resize: vertical; }
-  button { font: inherit; padding: 2px 10px; border: 1px solid var(--border); border-radius: 6px;
+  button, select { font: inherit; padding: 2px 10px; border: 1px solid var(--border); border-radius: 6px;
     background: var(--panel); color: var(--fg); cursor: pointer; }
+  .toolbar { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
+  .toolbar label { display: flex; align-items: center; gap: 6px; color: var(--muted); }
   .muted { color: var(--muted); }
   .bad { color: var(--bad); }
   .warn { color: var(--warn); }
@@ -68,21 +81,36 @@
 </head>
 <body>
 <main x-data="releaseScope" x-cloak>
-  <p x-show="failure" class="bad" x-text="failure"></p>
+  <div class="toolbar">
+    <label><span x-text="t('language')"></span>
+      <select :value="lang" @change="setLang($event.target.value)">
+        <option value="en">English</option>
+        <option value="ru">Русский</option>
+      </select>
+    </label>
+    <label><span x-text="t('theme')"></span>
+      <select :value="theme" @change="setTheme($event.target.value)">
+        <option value="auto" x-text="t('themeAuto')"></option>
+        <option value="light" x-text="t('themeLight')"></option>
+        <option value="dark" x-text="t('themeDark')"></option>
+      </select>
+    </label>
+  </div>
+  <p x-show="failure" class="bad" x-text="t('loadFailed', { error: failure })"></p>
   <template x-if="report">
     <div>
-      <h1 x-text="report.jira_scope.length ? 'Release scope: ' + report.jira_scope.join(', ') : 'Release scope'"></h1>
+      <h1 x-text="report.jira_scope.length ? t('titleIssues', { keys: report.jira_scope.join(', ') }) : t('title')"></h1>
       <p class="muted">
-        Collected <span x-text="collectedAt"></span> UTC. Changes run from the commit on
-        <code x-text="report.production_environment"></code> to the head of the default branch<span
-          x-text="report.jira_scope.length ? '; rows above the latest merge request or commit linked to the issues are out of scope.' : '.'"></span>
+        <span x-text="t('rangeStart', { at: collectedAt })"></span>
+        <code x-text="report.production_environment"></code>
+        <span x-text="report.jira_scope.length ? t('rangeEndIssues') : t('rangeEnd')"></span>
       </p>
       <ul x-show="report.jira_scope.length">
         <template x-for="key in report.jira_scope" :key="key">
           <li>
             <a :href="issue(key) && issue(key).url" x-text="key"></a>
             <span x-show="issue(key)" :class="statusClass(issue(key))" x-text="issue(key) && issue(key).status"></span>
-            <span x-text="issue(key) ? issue(key).summary : 'not found in Jira'"></span>
+            <span x-text="issue(key) ? issue(key).summary : t('notInJira')"></span>
           </li>
         </template>
       </ul>
@@ -90,14 +118,14 @@
         <p class="bad" x-text="message"></p>
       </template>
 
-      <h2>Services</h2>
-      <p x-show="pickable.length" class="muted">Open a service and pick the tag to release: it ships every merge request and commit from its row down to production. The address keeps the picks, so share it to share them.</p>
-      <p x-show="ignored" class="warn" x-text="ignored"></p>
+      <h2 x-text="t('services')"></h2>
+      <p x-show="pickable.length" class="muted" x-text="t('servicesIntro')"></p>
+      <p x-show="ignored.length" class="warn" x-text="t('ignored', { picks: ignored.join(', ') })"></p>
       <template x-for="service in listed" :key="service.project">
         <details class="service" name="services">
           <summary>
             <span class="name" x-text="service.project"></span>
-            <span x-show="service.error" class="bad">failed to collect</span>
+            <span x-show="service.error" class="bad" x-text="t('failedToCollect')"></span>
             <span x-show="!service.error">
               <span class="muted" x-text="productionRef(service) + ' →'"></span>
               <span x-show="pickOf(service)" class="picked-tag" x-text="picks[service.project]"></span>
@@ -105,7 +133,7 @@
             </span>
             <span class="muted" x-text="lineDetails(service)"></span>
             <span x-text="failureCounts(service)"></span>
-            <span x-show="service.truncated" class="warn" title="Older merge requests and commits were not collected; open for details">range cut short</span>
+            <span x-show="service.truncated" class="warn" :title="t('rangeCutTitle')" x-text="t('rangeCut')"></span>
           </summary>
           <div class="body">
             <p>
@@ -119,7 +147,7 @@
               <p class="warn" x-text="warning"></p>
             </template>
             <p x-show="service.release && service.release.pending_merge_requests.length">
-              Not merged:
+              <span x-text="t('notMerged')"></span>
               <template x-for="item in service.release ? service.release.pending_merge_requests : []" :key="item.iid">
                 <a :href="item.url" x-text="'!' + item.iid + ' ' + item.title + ' '"></a>
               </template>
@@ -127,7 +155,10 @@
             <div class="scroll" x-show="service.rows.length">
               <table>
                 <thead>
-                  <tr><th>Tag</th><th>Change</th><th>Jira</th><th>Deployed to</th><th>Failed jobs</th></tr>
+                  <tr>
+                    <th x-text="t('columnTag')"></th><th x-text="t('columnChange')"></th><th>Jira</th>
+                    <th x-text="t('columnDeployed')"></th><th x-text="t('columnFailed')"></th>
+                  </tr>
                 </thead>
                 <tbody>
                   <template x-for="(row, index) in service.rows" :key="index">
@@ -137,14 +168,14 @@
                           <div class="tag">
                             <button type="button" :class="{ picked: picks[service.project] === tag.name }"
                               @click="pick(service, tag.name, $el)"
-                              x-text="picks[service.project] === tag.name ? 'picked' : 'pick'"></button>
+                              x-text="picks[service.project] === tag.name ? t('picked') : t('pick')"></button>
                             <a :href="tag.pipeline ? tag.pipeline.url : tag.url" x-text="tag.name"></a>
                             <span x-text="pipelineIcon(tag.pipeline)"></span>
                           </div>
                         </template>
                       </td>
                       <td>
-                        <span x-show="row.linked" title="Linked to the issues">🎯</span>
+                        <span x-show="row.linked" :title="t('linked')">🎯</span>
                         <template x-for="item in row.merge_requests" :key="item.iid">
                           <div>
                             <a :href="item.url" x-text="'!' + item.iid"></a>
@@ -157,7 +188,7 @@
                             <span x-text="item.title + (item.author ? ' · ' + item.author : '')"></span>
                           </div>
                         </template>
-                        <span x-show="!row.in_scope" class="muted">out of scope</span>
+                        <span x-show="!row.in_scope" class="muted" x-text="t('outOfScope')"></span>
                       </td>
                       <td>
                         <template x-for="key in row.jira_keys" :key="key.key">
@@ -174,7 +205,7 @@
                           <div>
                             <span x-text="line.label"></span>
                             <a :href="line.url" x-text="line.name"></a>
-                            <span x-show="line.allowed" class="muted">(allowed to fail)</span>
+                            <span x-show="line.allowed" class="muted" x-text="t('allowedToFail')"></span>
                           </div>
                         </template>
                       </td>
@@ -184,24 +215,24 @@
               </table>
             </div>
             <p x-show="pickOf(service)">
-              <button type="button" @click="pick(service, '', $el)">Clear pick</button>
+              <button type="button" @click="pick(service, '', $el)" x-text="t('clearPick')"></button>
             </p>
           </div>
         </details>
       </template>
 
-      <h2>Release</h2>
-      <p x-show="!pickable.length" class="muted">No service has a tag between production and the head of the default branch.</p>
-      <p x-show="pickable.length && !picked.length" class="muted">Pick a tag in a service above to fill the lists.</p>
-      <p x-show="notice" class="warn" x-text="notice"></p>
+      <h2 x-text="t('release')"></h2>
+      <p x-show="!pickable.length" class="muted" x-text="t('noCandidates')"></p>
+      <p x-show="pickable.length && !picked.length" class="muted" x-text="t('pickToFill')"></p>
+      <p x-show="copyFailed" class="warn" x-text="t('copyFailed')"></p>
 
       <div class="outputs" x-show="picked.length">
         <section>
           <div class="out-head">
-            <h3 x-text="'Jira tasks (' + tasks.length + ')'"></h3>
+            <h3 x-text="t('tasks', { count: tasks.length })"></h3>
             <span>
-              <button type="button" @click="copy(taskKeys)">Copy keys</button>
-              <button type="button" @click="copy(taskJql)">Copy JQL</button>
+              <button type="button" @click="copy(taskKeys)" x-text="t('copyKeys')"></button>
+              <button type="button" @click="copy(taskJql)" x-text="t('copyJql')"></button>
             </span>
           </div>
           <ul>
@@ -210,7 +241,7 @@
                 <a :href="task.url" x-text="task.key"></a>
                 <span x-show="task.issue" :class="statusClass(task.issue)" x-text="task.issue && task.issue.status"></span>
                 <span x-text="task.issue ? task.issue.summary : ''"></span>
-                <span x-show="isMissing(task.key)" class="warn">not found in Jira</span>
+                <span x-show="isMissing(task.key)" class="warn" x-text="t('notInJira')"></span>
               </li>
             </template>
           </ul>
@@ -219,8 +250,8 @@
         </section>
         <section>
           <div class="out-head">
-            <h3>Tag pipelines</h3>
-            <button type="button" @click="copy(pipelinesMarkdown)">Copy</button>
+            <h3 x-text="t('tagPipelines')"></h3>
+            <button type="button" @click="copy(pipelinesMarkdown)" x-text="t('copy')"></button>
           </div>
           <ul>
             <template x-for="item in picked" :key="item.service.project">
@@ -230,7 +261,7 @@
                   <a :href="item.candidate.tag.pipeline.url"
                     x-text="pipelineIcon(item.candidate.tag.pipeline) + ' #' + item.candidate.tag.pipeline.id"></a>
                 </template>
-                <span x-show="!item.candidate.tag.pipeline" class="warn">no pipeline</span>
+                <span x-show="!item.candidate.tag.pipeline" class="warn" x-text="t('noPipeline')"></span>
               </li>
             </template>
           </ul>
@@ -238,8 +269,8 @@
         </section>
         <section>
           <div class="out-head">
-            <h3>Compare</h3>
-            <button type="button" @click="copy(compareMarkdown)">Copy</button>
+            <h3 x-text="t('compare')"></h3>
+            <button type="button" @click="copy(compareMarkdown)" x-text="t('copy')"></button>
           </div>
           <ul>
             <template x-for="item in picked" :key="item.service.project">
@@ -253,14 +284,14 @@
         </section>
         <section class="wide">
           <div class="out-head">
-            <h3>Release post</h3>
-            <button type="button" @click="copy(releasePost)">Copy</button>
+            <h3 x-text="t('releasePost')"></h3>
+            <button type="button" @click="copy(releasePost)" x-text="t('copy')"></button>
           </div>
           <textarea readonly rows="12" x-text="releasePost"></textarea>
         </section>
       </div>
 
-      <p class="muted">Legend: ✅ success · ❌ failed · 🔄 running · ⏭ canceled or skipped · ⚠️ no pipeline</p>
+      <p class="muted" x-text="t('legend')"></p>
     </div>
   </template>
 </main>
@@ -270,15 +301,160 @@
     running: "🔄", scheduled: "🔄", canceled: "⏭", skipped: "⏭", manual: "⏭",
   };
 
+  const STRINGS = {
+    en: {
+      language: "Language",
+      theme: "Theme",
+      themeAuto: "Auto",
+      themeLight: "Light",
+      themeDark: "Dark",
+      loadFailed: "Cannot load the report: {error}.",
+      title: "Release scope",
+      titleIssues: "Release scope: {keys}",
+      rangeStart: "Collected {at} UTC. Changes run from the commit on",
+      rangeEnd: "to the head of the default branch.",
+      rangeEndIssues:
+        "to the head of the default branch; rows above the latest merge request or commit linked to the issues are out of scope.",
+      notInJira: "not found in Jira",
+      services: "Services",
+      servicesIntro:
+        "Open a service and pick the tag to release: it ships every merge request and commit from its row down to production. The address keeps the picks, so share it to share them.",
+      ignored: "Ignored picks from the address that are not in this report: {picks}.",
+      failedToCollect: "failed to collect",
+      notInProduction: "not in production",
+      pickTag: "pick a tag",
+      noTagYet: "no tag yet",
+      upToDate: "up to date",
+      rows: { one: "{count} merge request or commit", other: "{count} merge requests or commits" },
+      taskCount: { one: "{count} task", other: "{count} tasks" },
+      shipsOf: "{shipped} of {rows}",
+      failedCount: "❌ {count} failed",
+      allowedCount: "{count} failed, allowed to fail",
+      rangeCut: "range cut short",
+      rangeCutTitle: "Older merge requests and commits were not collected; open for details",
+      notMerged: "Not merged:",
+      columnTag: "Tag",
+      columnChange: "Change",
+      columnDeployed: "Deployed to",
+      columnFailed: "Failed jobs",
+      pick: "pick",
+      picked: "picked",
+      linked: "Linked to the issues",
+      outOfScope: "out of scope",
+      tagJobs: "tag {name}",
+      allowedToFail: "(allowed to fail)",
+      clearPick: "Clear pick",
+      release: "Release",
+      noCandidates: "No service has a tag between production and the head of the default branch.",
+      pickToFill: "Pick a tag in a service above to fill the lists.",
+      copyFailed: "Copying needs HTTPS; select the text in the box instead.",
+      tasks: "Jira tasks ({count})",
+      copyKeys: "Copy keys",
+      copyJql: "Copy JQL",
+      copy: "Copy",
+      tagPipelines: "Tag pipelines",
+      noPipeline: "no pipeline",
+      compare: "Compare",
+      commitsTo: "commits to {tag}",
+      releasePost: "Release post",
+      postServices: "**Services**",
+      postTasks: "**Jira tasks ({count})**",
+      postNone: "- none",
+      postPipeline: "pipeline #{id}",
+      legend: "Legend: ✅ success · ❌ failed · 🔄 running · ⏭ canceled or skipped · ⚠️ no pipeline",
+    },
+    ru: {
+      language: "Язык",
+      theme: "Тема",
+      themeAuto: "Как в системе",
+      themeLight: "Светлая",
+      themeDark: "Тёмная",
+      loadFailed: "Не удалось загрузить отчёт: {error}.",
+      title: "Состав релиза",
+      titleIssues: "Состав релиза: {keys}",
+      rangeStart: "Собрано {at} UTC. Изменения считаются от коммита на",
+      rangeEnd: "до головы основной ветки.",
+      rangeEndIssues:
+        "до головы основной ветки; строки выше последнего MR или коммита, связанного с задачами, вне скоупа.",
+      notInJira: "нет в Jira",
+      services: "Сервисы",
+      servicesIntro:
+        "Откройте сервис и выберите тег для релиза: в него войдут все MR и коммиты от его строки до прода. Выбор хранится в адресе страницы, так что им можно поделиться ссылкой.",
+      ignored: "Из адреса пропущены теги, которых нет в этом отчёте: {picks}.",
+      failedToCollect: "не удалось собрать",
+      notInProduction: "нет на проде",
+      pickTag: "выберите тег",
+      noTagYet: "тега ещё нет",
+      upToDate: "всё на проде",
+      rows: { one: "{count} MR или коммит", few: "{count} MR или коммита", many: "{count} MR или коммитов" },
+      taskCount: { one: "{count} задача", few: "{count} задачи", many: "{count} задач" },
+      shipsOf: "{shipped} из {rows}",
+      failedCount: "❌ упало: {count}",
+      allowedCount: "упало, но падать разрешено: {count}",
+      rangeCut: "диапазон обрезан",
+      rangeCutTitle: "Старые MR и коммиты не собраны; подробности внутри",
+      notMerged: "Не влиты:",
+      columnTag: "Тег",
+      columnChange: "Изменение",
+      columnDeployed: "Задеплоено на",
+      columnFailed: "Упавшие джобы",
+      pick: "выбрать",
+      picked: "выбран",
+      linked: "Связано с задачами",
+      outOfScope: "вне скоупа",
+      tagJobs: "тег {name}",
+      allowedToFail: "(падать разрешено)",
+      clearPick: "Сбросить выбор",
+      release: "Релиз",
+      noCandidates: "Ни у одного сервиса нет тега между продом и головой основной ветки.",
+      pickToFill: "Выберите тег в сервисе выше, чтобы заполнить списки.",
+      copyFailed: "Кнопка копирования работает только по HTTPS; выделите текст в поле.",
+      tasks: "Задачи Jira ({count})",
+      copyKeys: "Копировать ключи",
+      copyJql: "Копировать JQL",
+      copy: "Копировать",
+      tagPipelines: "Пайплайны тегов",
+      noPipeline: "нет пайплайна",
+      compare: "Сравнение",
+      commitsTo: "коммиты до {tag}",
+      releasePost: "Пост о релизе",
+      postServices: "**Сервисы**",
+      postTasks: "**Задачи Jira ({count})**",
+      postNone: "- нет",
+      postPipeline: "пайплайн #{id}",
+      legend: "Обозначения: ✅ успешно · ❌ упал · 🔄 выполняется · ⏭ отменён или пропущен · ⚠️ нет пайплайна",
+    },
+  };
+
+  const PLURALS = Object.fromEntries(Object.keys(STRINGS).map((lang) => [lang, new Intl.PluralRules(lang)]));
+
+  const stored = (key) => {
+    try {
+      return localStorage.getItem(key);
+    } catch {
+      return null;
+    }
+  };
+  const store = (key, value) => {
+    try {
+      localStorage.setItem(key, value);
+    } catch {}
+  };
+
   document.addEventListener("alpine:init", () => {
     Alpine.data("releaseScope", () => ({
       report: null,
       failure: "",
-      notice: "",
-      ignored: "",
+      copyFailed: false,
+      ignored: [],
       picks: {},
+      lang: "en",
+      theme: "auto",
 
       async init() {
+        const lang = stored("release-scope-lang");
+        this.setLang(lang in STRINGS ? lang : navigator.language.toLowerCase().startsWith("ru") ? "ru" : "en");
+        this.theme = document.documentElement.dataset.theme || "auto";
         try {
           const response = await fetch("report.json", { cache: "no-store" });
           if (!response.ok) throw new Error(`report.json returned ${response.status}`);
@@ -291,8 +467,29 @@
           this.readHash();
           window.addEventListener("hashchange", () => this.readHash());
         } catch (error) {
-          this.failure = `Cannot load the report: ${error.message}.`;
+          this.failure = error.message;
         }
+      },
+
+      t(key, params = {}) {
+        let text = STRINGS[this.lang][key] ?? STRINGS.en[key];
+        if (typeof text === "object") {
+          const form = PLURALS[this.lang].select(params.count);
+          text = text[form] ?? text.many ?? text.other;
+        }
+        return text.replace(/\{(\w+)\}/g, (match, name) => (name in params ? params[name] : match));
+      },
+      setLang(lang) {
+        this.lang = lang;
+        document.documentElement.lang = lang;
+        document.title = STRINGS[lang].title;
+        store("release-scope-lang", lang);
+      },
+      setTheme(theme) {
+        this.theme = theme;
+        if (theme === "auto") delete document.documentElement.dataset.theme;
+        else document.documentElement.dataset.theme = theme;
+        store("release-scope-theme", theme);
       },
 
       get collectedAt() {
@@ -336,19 +533,27 @@
           .map(({ service, candidate }) => {
             const pipeline = candidate.tag.pipeline;
             const label = `${service.project} ${candidate.tag.name}`;
-            return pipeline ? `- [${label}](${pipeline.url}) ${pipeline.status}` : `- ${label}: no pipeline`;
+            return pipeline ? `- [${label}](${pipeline.url}) ${pipeline.status}` : `- ${label}: ${this.t("noPipeline")}`;
           })
           .join("\n");
       },
       get releasePost() {
         const services = this.picked.map((item) => {
           const pipeline = item.candidate.tag.pipeline;
-          const build = pipeline ? `[pipeline #${pipeline.id}](${pipeline.url}) ${pipeline.status}` : "no pipeline";
+          const build = pipeline
+            ? `[${this.t("postPipeline", { id: pipeline.id })}](${pipeline.url}) ${pipeline.status}`
+            : this.t("noPipeline");
           const compare = `[${this.compareLabel(item)}](${item.candidate.compare_url})`;
           return `- ${item.service.project} ${item.candidate.tag.name}: ${compare} · ${build}`;
         });
         const tasks = this.tasks.map((task) => `- [${task.key}](${task.url})${task.issue ? " " + task.issue.summary : ""}`);
-        return ["**Services**", ...services, "", `**Jira tasks (${tasks.length})**`, ...(tasks.length ? tasks : ["- none"])].join("\n");
+        return [
+          this.t("postServices"),
+          ...services,
+          "",
+          this.t("postTasks", { count: tasks.length }),
+          ...(tasks.length ? tasks : [this.t("postNone")]),
+        ].join("\n");
       },
       get compareMarkdown() {
         return this.picked
@@ -381,8 +586,7 @@
             if (known) wanted.delete(service.project);
           }
         }
-        const unknown = [...wanted].map(([project, tag]) => (tag ? `${project} ${tag}` : project));
-        this.ignored = unknown.length ? `Ignored picks from the address that are not in this report: ${unknown.join(", ")}.` : "";
+        this.ignored = [...wanted].map(([project, tag]) => (tag ? `${project} ${tag}` : project));
         this.writeHash();
       },
       writeHash() {
@@ -394,20 +598,19 @@
         return service.candidates.find((item) => item.tag.name === this.picks[service.project]);
       },
       pickHint(service) {
-        if (service.candidates.length) return "pick a tag";
-        return service.rows.length ? "no tag yet" : "up to date";
+        if (service.candidates.length) return this.t("pickTag");
+        return service.rows.length ? this.t("noTagYet") : this.t("upToDate");
       },
       lineDetails(service) {
         const candidate = this.pickOf(service);
+        const rows = this.t("rows", { count: service.rows.length });
         if (candidate) {
-          return `${candidate.rows} of ${this.rowsLabel(service.rows.length)} · ${this.plural(candidate.jira_keys.length, "task")}`;
+          const shipped = this.t("shipsOf", { shipped: candidate.rows, rows });
+          return `${shipped} · ${this.t("taskCount", { count: candidate.jira_keys.length })}`;
         }
         if (!service.rows.length) return "";
         const keys = new Set(service.rows.filter((row) => row.in_scope).flatMap((row) => row.jira_keys.map((key) => key.key)));
-        return `${this.rowsLabel(service.rows.length)} · ${this.plural(keys.size, "task")}`;
-      },
-      rowsLabel(count) {
-        return count === 1 ? "1 merge request or commit" : `${count} merge requests or commits`;
+        return `${rows} · ${this.t("taskCount", { count: keys.size })}`;
       },
       ships(service, index) {
         const tag = this.picks[service.project];
@@ -432,25 +635,25 @@
       },
       productionRef(service) {
         const production = this.production(service);
-        if (!production) return "not in production";
+        if (!production) return this.t("notInProduction");
         return production.tag ? production.ref : production.sha.slice(0, 8);
       },
       compareLabel({ service, candidate }) {
-        if (!this.production(service)) return `commits to ${candidate.tag.name}`;
+        if (!this.production(service)) return this.t("commitsTo", { tag: candidate.tag.name });
         return `${this.productionRef(service)}...${candidate.tag.name}`;
       },
       pipelineIcon(pipeline) {
         return pipeline ? ICONS[pipeline.status] || pipeline.status : "⚠️";
-      },
-      plural(count, noun) {
-        return `${count} ${noun}${count === 1 ? "" : "s"}`;
       },
       failureCounts(service) {
         const pipelines = service.rows.flatMap((row) => [row.main_pipeline, ...row.tags.map((tag) => tag.pipeline)]);
         const jobs = pipelines.filter(Boolean).flatMap((pipeline) => pipeline.failed_jobs);
         const allowed = jobs.filter((job) => job.allow_failure).length;
         const blocking = jobs.length - allowed;
-        return [blocking ? `❌ ${blocking} failed` : "", allowed ? `${allowed} failed, allowed to fail` : ""].filter(Boolean).join(" · ");
+        return [
+          blocking ? this.t("failedCount", { count: blocking }) : "",
+          allowed ? this.t("allowedCount", { count: allowed }) : "",
+        ].filter(Boolean).join(" · ");
       },
       failedJobs(row) {
         const lines = [];
@@ -460,15 +663,15 @@
           }
         };
         if (row.main_pipeline) add(`main ${this.pipelineIcon(row.main_pipeline)}`, row.main_pipeline);
-        for (const tag of row.tags) if (tag.pipeline) add(`tag ${tag.name}`, tag.pipeline);
+        for (const tag of row.tags) if (tag.pipeline) add(this.t("tagJobs", { name: tag.name }), tag.pipeline);
         return lines;
       },
       async copy(text) {
         try {
           await navigator.clipboard.writeText(text);
-          this.notice = "";
+          this.copyFailed = false;
         } catch {
-          this.notice = "Copying needs HTTPS; select the text in the box instead.";
+          this.copyFailed = true;
         }
       },
     }));
