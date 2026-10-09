@@ -108,6 +108,10 @@ Besides `report.json`, `collect` writes `index.html` and its script into the out
 installed package and change only with it, so the page always matches the report schema. The page loads
 `report.json` from next to itself; it needs a web server, not a `file://` URL.
 
+Switches at the top pick the language, English or Russian, and the theme: as in the system, light, or dark. The page
+starts in the browser's language and remembers both choices in the browser. The copied lists and release post follow
+the language; warnings and errors from `collect`, and texts from GitLab and Jira, stay as written.
+
 **Services** lists every service with a production deployment or with rows, and every service that failed to collect,
 as one line: what production runs, the picked tag, how many merge requests or commits and Jira tasks it ships, failed jobs
 with the ones allowed to fail counted apart, and a mark when the range was cut at `RELEASE_SCOPE_MAX_COMMITS`.
