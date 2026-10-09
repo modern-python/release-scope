@@ -108,10 +108,11 @@ installed package and change only with it, so the page always matches the report
 `report.json` from next to itself; it needs a web server, not a `file://` URL.
 
 **Services** lists every service with a production deployment, and every service that failed to collect, as one
-line: what production runs, the picked tag, how many merge requests or commits and Jira tasks it ships, failed jobs,
-and a mark when the range was cut at `RELEASE_SCOPE_MAX_COMMITS`. Opening a line shows the service's environments,
-warnings, merge requests that are not merged yet, and its rows with tags and their pipelines, merge requests or
-commits, Jira keys, environments, and failed jobs; rows out of scope are dimmed. Each tag has a **pick** button:
+line: what production runs, the picked tag, how many merge requests or commits and Jira tasks it ships, failed jobs
+with the ones allowed to fail counted apart, and a mark when the range was cut at `RELEASE_SCOPE_MAX_COMMITS`.
+Opening a line shows the service's environments, warnings, merge requests that are not merged yet, and its rows with
+tags and their pipelines, merge requests or commits, Jira keys with their status, environments, and failed jobs; rows
+out of scope are dimmed. Links open in a new tab. Each tag has a **pick** button:
 picking it highlights the rows it ships and closes the line again. A `--jira` report starts with each service's
 release tag picked. Services without a production deployment are left out of the page.
 
@@ -124,8 +125,8 @@ reload starts from the release tags again.
 text box to copy from by hand, since browsers allow the copy button only over HTTPS:
 
 - **Jira tasks**: the keys of every in-scope row from each picked tag down to production, without duplicates, with
-  summary and status, flagging issues that are not done. Copy them one per line or as a JQL `key in (...)` clause,
-  each in its own box.
+  summary and a status badge: grey to do, blue in progress, green done. Copy them one per line or as a JQL
+  `key in (...)` clause, each in its own box.
 - **Tag pipelines**: the pipeline of each picked tag, as a Markdown list.
 - **Compare**: a GitLab compare link per service from production to the picked tag, as a Markdown list.
 - **Release post**: one Markdown text with a line per picked tag, holding its compare link and pipeline, followed by
