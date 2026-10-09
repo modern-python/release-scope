@@ -115,14 +115,21 @@ commits, Jira keys, environments, and failed jobs; rows out of scope are dimmed.
 picking it highlights the rows it ships and closes the line again. A `--jira` report starts with each service's
 release tag picked. Services without a production deployment are left out of the page.
 
-**Release** at the bottom turns the picked tags into three lists, each with a copy button and a text box to copy from
-by hand, since browsers allow the copy button only over HTTPS:
+The address keeps the picks after `#`, as `team/api=2.4.0&team/web=5.12.0`, so sharing or reloading the page keeps
+them. An address with picks replaces the release tags of a `--jira` report; picks that are not in the report, such as
+a tag that a later run no longer lists, are skipped with a warning. Clearing every pick empties the address, so a
+reload starts from the release tags again.
+
+**Release** at the bottom turns the picked tags into three lists and a release post, each with a copy button and a
+text box to copy from by hand, since browsers allow the copy button only over HTTPS:
 
 - **Jira tasks**: the keys of every in-scope row from each picked tag down to production, without duplicates, with
   summary and status, flagging issues that are not done. Copy them one per line or as a JQL `key in (...)` clause,
   each in its own box.
 - **Tag pipelines**: the pipeline of each picked tag, as a Markdown list.
 - **Compare**: a GitLab compare link per service from production to the picked tag, as a Markdown list.
+- **Release post**: one Markdown text with a line per picked tag, holding its compare link and pipeline, followed by
+  the Jira tasks with their summaries.
 
 ## GitLab Pages
 
