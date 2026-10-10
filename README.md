@@ -119,9 +119,10 @@ the language, and so do warnings and errors from `collect`; texts from GitLab an
 Jira's own error details, stay as written.
 
 **Services** lists every service with a production deployment or with rows, and every service that failed to collect,
-as one line: what production runs, the picked tag, how many merge requests or commits and Jira tasks it ships, failed jobs
-with the ones allowed to fail counted apart, a mark when the range was cut at `RELEASE_SCOPE_MAX_COMMITS`, and how
-many rows have no tag yet.
+as one line: what production runs, the picked tag, how many merge requests or commits and Jira tasks it ships, the
+failed jobs of the picked tag, or of the newest tag before a pick, with the ones allowed to fail counted apart, a mark
+when the range was cut at `RELEASE_SCOPE_MAX_COMMITS`, and how many rows have no tag yet. The failed jobs are those of
+the tag's pipeline and of the main pipeline of its commit; failures in other rows show only when the line is opened.
 Opening a line shows the service's environments, warnings, a link to create the next tag on the head when rows have no
 tag yet, merge requests that are not merged yet, and its rows with
 tags and their pipelines, merge requests or commits, Jira keys with their status, environments, and failed jobs; rows
