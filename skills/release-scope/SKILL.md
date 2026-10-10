@@ -77,13 +77,13 @@ For `2` to `4` nothing was written; show the message and stop.
 
 Read `$out/site/report.json` and answer the user's question from it, briefly.
 
-- `services[]`: `project`, `environments` (what each environment runs), `rows` (newest first, from the default
-  branch head down to production), `warnings`, `error`. Warnings and errors are messages: read their `text`;
+- `services[]`: `project`, `environments` (what each environment runs, and `deployed_at`, when its deploy job
+  finished), `rows` (newest first, from the default branch head down to production), `warnings`, `error`. Warnings and errors are messages: read their `text`;
   `code` and `params` carry the same facts in structured form.
 - A row is one merged merge request or a direct commit: `merge_requests`, `commits`, `tags` pointing into it,
-  `environments` running exactly its commit now, `deployed_at` (for each environment other than production, when
-  its first successful deployment of this row or a newer one finished), `jira_keys`, and `main_pipeline` with `failed_jobs`. Tag pipelines carry their
-  own `failed_jobs`.
+  `environments` running exactly its commit now, `first_deployed_at` (per environment other than production, when the
+  first deploy job that shipped this row or a newer one finished), `jira_keys`, and `main_pipeline` with
+  `failed_jobs`. Tag pipelines carry their own `failed_jobs`.
 - A service with no rows is up to date with production.
 - A service never deployed to production has a `no_production` warning; its rows run down to the first commit of the
   default branch and its `compare_url` lists the tag's commits.

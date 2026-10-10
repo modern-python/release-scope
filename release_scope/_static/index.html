@@ -498,6 +498,7 @@
         `Нет успешного деплоя на «${p.environment}»; строки начинаются с первого коммита ветки ${p.branch}.`,
       commits_truncated: (p) => `Достигнут лимит коммитов (${p.max_commits}); более старые изменения не показаны.`,
       tags_truncated: () => "Список тегов обрезан; у некоторых строк теги могут не отображаться.",
+      deployments_truncated: (p) => `История деплоев на ${p.environment} обрезана; у новых строк может не быть времени деплоя.`,
       merged_elsewhere: (p) => `!${p.iid} влит в ${p.target_branch}, а не в ${p.default_branch}.`,
       gitlab_unreachable: (p) => `${p.project}: не удалось получить ${resourceAccusativeRu(p)} из GitLab (${p.reason}).`,
       gitlab_status: (p) => `${p.project}: не удалось получить ${resourceAccusativeRu(p)} из GitLab: ответ ${p.status}.`,
@@ -731,8 +732,8 @@
         return Boolean(this.report.jira && this.report.jira.missing.includes(key));
       },
       deployments(row) {
-        const names = [...new Set([...Object.keys(row.deployed_at), ...row.environments])];
-        return names.map((name) => ({ name, at: row.deployed_at[name], now: row.environments.includes(name) }));
+        const names = [...new Set([...Object.keys(row.first_deployed_at), ...row.environments])];
+        return names.map((name) => ({ name, at: row.first_deployed_at[name], now: row.environments.includes(name) }));
       },
       environment(service, name) {
         return service.environments.find((item) => item.name === name);

@@ -36,8 +36,14 @@ class Deployment(pydantic.BaseModel):
     id: int
     ref: str
     sha: str
-    created_at: str
+    created_at: dt.datetime
     deployable: Deployable | None = None
+
+    @property
+    def finished_at(self) -> dt.datetime:
+        if self.deployable and self.deployable.finished_at:
+            return self.deployable.finished_at
+        return self.created_at
 
 
 class TagCommit(pydantic.BaseModel):
@@ -216,8 +222,8 @@ class GitLabApi:
 
     def list_successful_deployments(
         self, project_id: int, environment: str, *, finished_after: dt.datetime
-    ) -> list[Deployment]:
-        deployments, _ = self._pages(
+    ) -> tuple[list[Deployment], bool]:
+        return self._pages(
             f"{_API}/projects/{project_id}/deployments",
             {
                 "environment": environment,
@@ -228,7 +234,6 @@ class GitLabApi:
             _Deployments,
             resource="deployments",
         )
-        return deployments
 
     def list_tags(self, project_id: int) -> tuple[list[Tag], bool]:
         return self._pages(f"{_API}/projects/{project_id}/repository/tags", {}, _Tags, resource="repository")

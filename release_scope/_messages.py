@@ -98,6 +98,14 @@ def tags_truncated() -> Message:
     return Message(code=MessageCode.TAGS_TRUNCATED, text="Tag list was truncated; some tags may be missing from rows.")
 
 
+def deployments_truncated(environment: str) -> Message:
+    return Message(
+        code=MessageCode.DEPLOYMENTS_TRUNCATED,
+        params={"environment": environment},
+        text=f"Deployment history of {environment} was truncated; newer rows may miss when they reached it.",
+    )
+
+
 def merged_elsewhere(iid: int, target_branch: str, default_branch: str) -> Message:
     return Message(
         code=MessageCode.MERGED_ELSEWHERE,

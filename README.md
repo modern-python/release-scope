@@ -22,8 +22,10 @@ Jira issues, failed jobs.
 
 For every service it reads the latest successful production deployment, walks the default branch down to that
 commit, or down to its first commit when the service was never deployed to production, and writes a static site with
-one JSON report: a row per merge request or direct commit, newest first, with the tags that point into it, the
-environments running it, when each environment other than production first ran it, the Jira keys its MR mentions, and the failed jobs of its main-branch and tag pipelines. With a Jira token, it also reads the summary and status of every key in one batched search,
+one JSON report: a row per merge request or direct commit, newest first. A row has the tags that point into it, the
+environments running it, the Jira keys its MR mentions, and the failed jobs of its main-branch and tag pipelines. It
+also has its first deployment to each environment other than production: when the first deploy job that shipped the
+row, or a newer row, finished. With a Jira token, it also reads the summary and status of every key in one batched search,
 and the GitLab merge requests and commits linked to each issue. GitLab's Jira integration adds those links to the
 issue's Web links whenever a commit or MR mentions it; a link counts only if it starts with
 `RELEASE_SCOPE_GITLAB__ENDPOINT`. The projects they point to are the issue's related services.
@@ -105,7 +107,7 @@ comes from one more request for the highest versions. One row, trimmed:
   "commits": [{"sha": "c3...", "title": "Merge branch 'feature/SHOP-12'"}],
   "jira_keys": [{"key": "SHOP-12", "url": "https://jira.example.com/browse/SHOP-12"}],
   "environments": ["preview"],
-  "deployed_at": {"preview": "2026-09-22T00:00:00Z"},
+  "first_deployed_at": {"preview": "2026-09-22T00:00:00Z"},
   "main_pipeline": {"id": 103, "status": "failed", "failed_jobs": [{"kind": "job", "name": "lint", "allow_failure": false}]}
 }
 ```

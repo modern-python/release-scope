@@ -11,7 +11,7 @@ import respx
 from release_scope import ioc
 from release_scope._cache import Cache, CacheData, CachedPipeline
 from release_scope._errors import ConfigError, GitLabError
-from release_scope._gitlab import Commit, GitLabApi, MergeRequest
+from release_scope._gitlab import Commit, Deployment, GitLabApi, MergeRequest
 from release_scope._jira_keys import extract_jira_keys
 from release_scope._links import parse_gitlab_link
 from release_scope._rows import RowDraft, first_deployed
@@ -195,11 +195,47 @@ def _at(day: int) -> dt.datetime:
     return dt.datetime(2026, 9, day, tzinfo=dt.UTC)
 
 
+def _deployment(sha: str, day: int) -> Deployment:
+    return Deployment.model_validate(
+        {
+            "id": day,
+            "ref": "main",
+            "sha": sha,
+            "created_at": "2026-09-01T00:00:00Z",
+            "deployable": {"finished_at": _at(day)},
+        }
+    )
+
+
 def test_a_row_is_first_deployed_by_the_earliest_deployment_of_it_or_a_newer_row() -> None:
     drafts: typing.Final = [_draft("head"), _draft("c3"), _draft("c2"), _draft("c1"), _draft("c0b", "c0a")]
 
     deployed: typing.Final = first_deployed(
-        drafts, [("c0a", _at(10)), ("c2", _at(12)), ("other", _at(11)), ("c3", _at(13)), ("c0a", _at(14))]
+        drafts,
+        {
+            "preview": [
+                _deployment("c0a", 10),
+                _deployment("c2", 12),
+                _deployment("other", 11),
+                _deployment("c3", 13),
+                _deployment("c0a", 14),
+            ],
+            "staging": [_deployment("c1", 15)],
+        },
     )
 
-    assert deployed == [None, _at(13), _at(12), _at(12), _at(10)]
+    assert deployed == [
+        {},
+        {"preview": _at(13)},
+        {"preview": _at(12)},
+        {"preview": _at(12), "staging": _at(15)},
+        {"preview": _at(10), "staging": _at(15)},
+    ]
+
+
+def test_a_deployment_without_a_finished_job_counts_from_its_creation() -> None:
+    deployment: typing.Final = Deployment.model_validate(
+        {"id": 1, "ref": "main", "sha": "c1", "created_at": "2026-09-02T00:00:00Z", "deployable": None}
+    )
+
+    assert deployment.finished_at == _at(2)

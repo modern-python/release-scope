@@ -3,7 +3,7 @@ import dataclasses
 import datetime as dt
 import typing
 
-from release_scope._gitlab import Commit, MergeRequest
+from release_scope._gitlab import Commit, Deployment, MergeRequest
 
 
 @dataclasses.dataclass(slots=True, kw_only=True)
@@ -40,15 +40,17 @@ def group_rows(
 
 
 def first_deployed(
-    drafts: collections.abc.Sequence[RowDraft], deployments: collections.abc.Iterable[tuple[str, dt.datetime]]
-) -> list[dt.datetime | None]:
+    drafts: collections.abc.Sequence[RowDraft],
+    deployments: collections.abc.Mapping[str, collections.abc.Iterable[Deployment]],
+) -> list[dict[str, dt.datetime]]:
     positions: typing.Final = {commit.id: index for index, draft in enumerate(drafts) for commit in draft.commits}
-    earliest: typing.Final[list[dt.datetime | None]] = [None] * len(drafts)
-    for sha, finished_at in deployments:
-        if sha not in positions:
-            continue
-        for index in range(positions[sha], len(drafts)):
-            current = earliest[index]
-            if current is None or finished_at < current:
-                earliest[index] = finished_at
+    earliest: typing.Final[list[dict[str, dt.datetime]]] = [{} for _ in drafts]
+    for environment, items in deployments.items():
+        for deployment in items:
+            if deployment.sha not in positions:
+                continue
+            for times in earliest[positions[deployment.sha] :]:
+                current = times.get(environment)
+                if current is None or deployment.finished_at < current:
+                    times[environment] = deployment.finished_at
     return earliest
