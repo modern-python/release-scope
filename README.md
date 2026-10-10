@@ -119,9 +119,10 @@ as one line: what production runs, the picked tag, how many merge requests or co
 with the ones allowed to fail counted apart, and a mark when the range was cut at `RELEASE_SCOPE_MAX_COMMITS`.
 Opening a line shows the service's environments, warnings, merge requests that are not merged yet, and its rows with
 tags and their pipelines, merge requests or commits, Jira keys with their status, environments, and failed jobs; rows
-out of scope are dimmed. Links open in a new tab. Each tag has a **pick** button:
-picking it highlights the rows it ships and closes the line again. A `--jira` report starts with each service's
-release tag picked. Services with neither a production deployment nor rows are left out of the page.
+out of scope are dimmed. Links, including the GitLab settings pages that warnings and errors point to, open in a new
+tab. Each tag has a **pick** button: picking it highlights the rows it ships and closes the line again. A `--jira`
+report starts with each service's release tag picked. Services with neither a production deployment nor rows are left
+out of the page.
 
 The address keeps the picks after `#`, as `team/api=2.4.0&team/web=5.12.0`, so sharing or reloading the page keeps
 them. An address with picks replaces the release tags of a `--jira` report; picks that are not in the report, such as
