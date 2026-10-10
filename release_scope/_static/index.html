@@ -116,7 +116,7 @@
         </template>
       </ul>
       <template x-for="item in problems" :key="item.text">
-        <p class="bad message" x-text="message(item)"></p>
+        <p class="bad message"><template x-for="(part, index) in messageParts(item)" :key="index"><span><template x-if="part.url"><a :href="part.url" x-text="part.text"></a></template><template x-if="!part.url"><span x-text="part.text"></span></template></span></template></p>
       </template>
 
       <h2 x-text="t('services')"></h2>
@@ -143,9 +143,9 @@
                 <span> · <span x-text="item.name"></span> <a :href="item.deployment_url" x-text="item.ref"></a></span>
               </template>
             </p>
-            <p x-show="service.error" class="bad message" x-text="service.error && message(service.error)"></p>
+            <p x-show="service.error" class="bad message"><template x-for="(part, index) in messageParts(service.error)" :key="index"><span><template x-if="part.url"><a :href="part.url" x-text="part.text"></a></template><template x-if="!part.url"><span x-text="part.text"></span></template></span></template></p>
             <template x-for="warning in service.warnings" :key="warning.text">
-              <p class="warn message" x-text="message(warning)"></p>
+              <p class="warn message"><template x-for="(part, index) in messageParts(warning)" :key="index"><span><template x-if="part.url"><a :href="part.url" x-text="part.text"></a></template><template x-if="!part.url"><span x-text="part.text"></span></template></span></template></p>
             </template>
             <p x-show="service.release && service.release.pending_merge_requests.length">
               <span x-text="t('notMerged')"></span>
@@ -529,6 +529,12 @@
       message(item) {
         const render = MESSAGES[this.lang] && MESSAGES[this.lang][item.code];
         return render ? render(item.params) : item.text;
+      },
+      messageParts(item) {
+        if (!item) return [];
+        return this.message(item)
+          .split(/(https?:\/\/\S+?)(?=[.,;:)]*(?:\s|$))/)
+          .map((text, index) => ({ text, url: index % 2 ? text : "" }));
       },
       setLang(lang) {
         this.lang = lang;
