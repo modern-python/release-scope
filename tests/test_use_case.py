@@ -1,3 +1,4 @@
+import datetime as dt
 import json
 import typing
 
@@ -93,6 +94,22 @@ def test_only_rows_holding_a_deployed_commit_name_the_environment() -> None:
     service: typing.Final = _only_service(_collect())
 
     assert [row.environments for row in service.rows] == [[], ["preview"], [], [], []]
+
+
+def test_rows_carry_when_each_environment_first_ran_them(gitlab: respx.Router) -> None:
+    service: typing.Final = _only_service(_collect())
+
+    assert [row.deployed_at for row in service.rows] == [
+        {},
+        {"preview": dt.datetime(2026, 9, 22, tzinfo=dt.UTC)},
+        {"preview": dt.datetime(2026, 9, 21, 9, tzinfo=dt.UTC)},
+        {"preview": dt.datetime(2026, 9, 21, 9, tzinfo=dt.UTC)},
+        {"preview": dt.datetime(2026, 9, 19, 12, tzinfo=dt.UTC)},
+    ]
+    params: typing.Final = gitlab["deployments:preview"].calls.last.request.url.params
+    assert params["status"] == "success"
+    assert params["finished_after"] == "2026-09-18T00:00:00+00:00"
+    assert gitlab["deploy:production"].call_count == 1
 
 
 @pytest.mark.usefixtures("gitlab")

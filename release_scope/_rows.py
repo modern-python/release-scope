@@ -1,5 +1,7 @@
 import collections.abc
 import dataclasses
+import datetime as dt
+import typing
 
 from release_scope._gitlab import Commit, MergeRequest
 
@@ -35,3 +37,18 @@ def group_rows(
         row = rows.setdefault(key, RowDraft(commits=[], merge_requests=list(merge_requests)))
         row.commits.append(commit)
     return list(rows.values())
+
+
+def first_deployed(
+    drafts: collections.abc.Sequence[RowDraft], deployments: collections.abc.Iterable[tuple[str, dt.datetime]]
+) -> list[dt.datetime | None]:
+    positions: typing.Final = {commit.id: index for index, draft in enumerate(drafts) for commit in draft.commits}
+    earliest: typing.Final[list[dt.datetime | None]] = [None] * len(drafts)
+    for sha, finished_at in deployments:
+        if sha not in positions:
+            continue
+        for index in range(positions[sha], len(drafts)):
+            current = earliest[index]
+            if current is None or finished_at < current:
+                earliest[index] = finished_at
+    return earliest

@@ -5,7 +5,7 @@ import typing
 import pydantic
 
 
-SCHEMA_VERSION: typing.Final = 5
+SCHEMA_VERSION: typing.Final = 6
 
 
 class MessageCode(enum.StrEnum):
@@ -83,6 +83,7 @@ class Row(pydantic.BaseModel):
     commits: list[CommitRef]
     jira_keys: list[JiraKeyRef]
     environments: list[str]
+    deployed_at: dict[str, dt.datetime] = pydantic.Field(default_factory=dict)
     main_pipeline: PipelineState | None
     linked: bool = False
     in_scope: bool = True
@@ -157,7 +158,7 @@ class JiraState(pydantic.BaseModel):
 
 
 class Report(pydantic.BaseModel):
-    schema_version: typing.Literal[5] = SCHEMA_VERSION
+    schema_version: typing.Literal[6] = SCHEMA_VERSION
     collected_at: dt.datetime
     production_environment: str
     services: list[Service]

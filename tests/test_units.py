@@ -1,3 +1,4 @@
+import datetime as dt
 import pathlib
 import typing
 
@@ -10,11 +11,12 @@ import respx
 from release_scope import ioc
 from release_scope._cache import Cache, CacheData, CachedPipeline
 from release_scope._errors import ConfigError, GitLabError
-from release_scope._gitlab import GitLabApi, MergeRequest
+from release_scope._gitlab import Commit, GitLabApi, MergeRequest
 from release_scope._jira_keys import extract_jira_keys
 from release_scope._links import parse_gitlab_link
+from release_scope._rows import RowDraft, first_deployed
 from release_scope._settings import GitLabConfig, Settings, load_settings
-from tests.payloads import merge_request
+from tests.payloads import commit, merge_request
 
 
 @pytest.mark.parametrize(
@@ -180,3 +182,24 @@ def test_gitlab_links_are_parsed_against_the_endpoint(url: str | None, expected:
 
     actual: typing.Final = (change.kind, change.project, change.project_url, change.iid, change.sha) if change else None
     assert actual == expected
+
+
+def _draft(*shas: str) -> RowDraft:
+    return RowDraft(
+        commits=[Commit.model_validate(commit(sha, sha, date="2026-09-01T00:00:00Z")) for sha in shas],
+        merge_requests=[],
+    )
+
+
+def _at(day: int) -> dt.datetime:
+    return dt.datetime(2026, 9, day, tzinfo=dt.UTC)
+
+
+def test_a_row_is_first_deployed_by_the_earliest_deployment_of_it_or_a_newer_row() -> None:
+    drafts: typing.Final = [_draft("head"), _draft("c3"), _draft("c2"), _draft("c1"), _draft("c0b", "c0a")]
+
+    deployed: typing.Final = first_deployed(
+        drafts, [("c0a", _at(10)), ("c2", _at(12)), ("other", _at(11)), ("c3", _at(13)), ("c0a", _at(14))]
+    )
+
+    assert deployed == [None, _at(13), _at(12), _at(12), _at(10)]

@@ -14,7 +14,7 @@ description: >
 through uvx with this version range; it matches the flags and report schema described here:
 
 ```bash
-uvx --from 'release-scope>=0.7,<0.8' release-scope --help
+uvx --from 'release-scope>=0.8,<0.9' release-scope --help
 ```
 
 ## Check the settings
@@ -58,7 +58,7 @@ run and only saves requests:
 ```bash
 out="${XDG_CACHE_HOME:-$HOME/.cache}/release-scope"
 mkdir -p "$out"
-uvx --from 'release-scope>=0.7,<0.8' release-scope collect --project team/backend/shop \
+uvx --from 'release-scope>=0.8,<0.9' release-scope collect --project team/backend/shop \
   --output "$out/site" --cache "$out/cache.json"
 ```
 
@@ -81,7 +81,8 @@ Read `$out/site/report.json` and answer the user's question from it, briefly.
   branch head down to production), `warnings`, `error`. Warnings and errors are messages: read their `text`;
   `code` and `params` carry the same facts in structured form.
 - A row is one merged merge request or a direct commit: `merge_requests`, `commits`, `tags` pointing into it,
-  `environments` already running it, `jira_keys`, and `main_pipeline` with `failed_jobs`. Tag pipelines carry their
+  `environments` running exactly its commit now, `deployed_at` (for each environment other than production, when
+  its first successful deployment of this row or a newer one finished), `jira_keys`, and `main_pipeline` with `failed_jobs`. Tag pipelines carry their
   own `failed_jobs`.
 - A service with no rows is up to date with production.
 - A service never deployed to production has a `no_production` warning; its rows run down to the first commit of the

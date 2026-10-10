@@ -23,7 +23,7 @@ Jira issues, failed jobs.
 For every service it reads the latest successful production deployment, walks the default branch down to that
 commit, or down to its first commit when the service was never deployed to production, and writes a static site with
 one JSON report: a row per merge request or direct commit, newest first, with the tags that point into it, the
-environments running it, the Jira keys its MR mentions, and the failed jobs of its main-branch and tag pipelines. With a Jira token, it also reads the summary and status of every key in one batched search,
+environments running it, when each environment other than production first ran it, the Jira keys its MR mentions, and the failed jobs of its main-branch and tag pipelines. With a Jira token, it also reads the summary and status of every key in one batched search,
 and the GitLab merge requests and commits linked to each issue. GitLab's Jira integration adds those links to the
 issue's Web links whenever a commit or MR mentions it; a link counts only if it starts with
 `RELEASE_SCOPE_GITLAB__ENDPOINT`. The projects they point to are the issue's related services.
@@ -105,6 +105,7 @@ comes from one more request for the highest versions. One row, trimmed:
   "commits": [{"sha": "c3...", "title": "Merge branch 'feature/SHOP-12'"}],
   "jira_keys": [{"key": "SHOP-12", "url": "https://jira.example.com/browse/SHOP-12"}],
   "environments": ["preview"],
+  "deployed_at": {"preview": "2026-09-22T00:00:00Z"},
   "main_pipeline": {"id": 103, "status": "failed", "failed_jobs": [{"kind": "job", "name": "lint", "allow_failure": false}]}
 }
 ```
@@ -118,7 +119,8 @@ installed package and change only with it, so the page always matches the report
 Switches at the top pick the language, English or Russian, and the theme: as in the system, light, or dark. The page
 starts in the browser's language and remembers both choices in the browser. The copied lists and release post follow
 the language, and so do warnings and errors from `collect`; texts from GitLab and Jira, such as titles, statuses and
-Jira's own error details, stay as written.
+Jira's own error details, stay as written. Times show in the browser's time zone; hovering one shows the value
+as the report holds it.
 
 **Services** lists every service with a production deployment or with rows, and every service that failed to collect,
 as one line: what production runs, the picked tag, how many merge requests or commits and Jira tasks it ships, the
@@ -128,7 +130,8 @@ range holds no tag, so more untagged rows may lie below it. The failed jobs are 
 the main pipeline of its commit; failures in other rows show only when the line is opened.
 Opening a line shows the service's environments, warnings, a link to create the next tag on the head when rows have no
 tag yet, merge requests that are not merged yet, and its rows with
-tags and their pipelines, merge requests or commits, Jira keys with their status, environments, and failed jobs; rows
+tags and their pipelines, merge requests or commits, Jira keys with their status, environments with the time each
+first ran the row, and failed jobs; rows
 out of scope are dimmed. Links, including the GitLab settings pages that warnings and errors point to, open in a new
 tab. Each tag has a **pick** button: picking it highlights the rows it ships and closes the line again. A `--jira`
 report starts with each service's release tag picked. Services with neither a production deployment nor rows are left
@@ -163,7 +166,7 @@ release-report:
   rules:
     - if: $CI_PIPELINE_SOURCE == "schedule"
   script:
-    - uvx --from 'release-scope>=0.7,<0.8' release-scope collect --group team/backend --output public || [ $? -eq 1 ]
+    - uvx --from 'release-scope>=0.8,<0.9' release-scope collect --group team/backend --output public || [ $? -eq 1 ]
   pages: true
 ```
 
@@ -202,4 +205,4 @@ npx skills add modern-python/release-scope
 ```
 
 The agent reads the same environment variables as the CLI, so set them first as described under Configuration.
-The skill runs `release-scope>=0.7,<0.8`, the range whose flags and report schema it describes.
+The skill runs `release-scope>=0.8,<0.9`, the range whose flags and report schema it describes.

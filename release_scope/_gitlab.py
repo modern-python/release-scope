@@ -29,6 +29,7 @@ class Project(pydantic.BaseModel):
 class Deployable(pydantic.BaseModel):
     web_url: str | None = None
     tag: bool = False
+    finished_at: dt.datetime | None = None
 
 
 class Deployment(pydantic.BaseModel):
@@ -212,6 +213,22 @@ class GitLabApi:
             resource="deployments",
         )
         return deployments.root[0] if deployments.root else None
+
+    def list_successful_deployments(
+        self, project_id: int, environment: str, *, finished_after: dt.datetime
+    ) -> list[Deployment]:
+        deployments, _ = self._pages(
+            f"{_API}/projects/{project_id}/deployments",
+            {
+                "environment": environment,
+                "status": "success",
+                "order_by": "finished_at",
+                "finished_after": finished_after.isoformat(),
+            },
+            _Deployments,
+            resource="deployments",
+        )
+        return deployments
 
     def list_tags(self, project_id: int) -> tuple[list[Tag], bool]:
         return self._pages(f"{_API}/projects/{project_id}/repository/tags", {}, _Tags, resource="repository")
