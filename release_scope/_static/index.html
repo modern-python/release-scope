@@ -723,14 +723,18 @@
         return pipeline ? ICONS[pipeline.status] || pipeline.status : "⚠️";
       },
       failureCounts(service) {
-        const pipelines = service.rows.flatMap((row) => [row.main_pipeline, ...row.tags.map((tag) => tag.pipeline)]);
+        const candidate = this.pickOf(service) || service.candidates[0];
+        if (!candidate) return "";
+        const row = service.rows.find((item) => item.tags.some((tag) => tag.name === candidate.tag.name));
+        const pipelines = [row && row.main_pipeline, candidate.tag.pipeline];
         const jobs = pipelines.filter(Boolean).flatMap((pipeline) => pipeline.failed_jobs);
         const allowed = jobs.filter((job) => job.allow_failure).length;
         const blocking = jobs.length - allowed;
-        return [
+        const counts = [
           blocking ? this.t("failedCount", { count: blocking }) : "",
           allowed ? this.t("allowedCount", { count: allowed }) : "",
         ].filter(Boolean).join(" · ");
+        return counts && !this.pickOf(service) ? `${candidate.tag.name}: ${counts}` : counts;
       },
       failedJobs(row) {
         const lines = [];
