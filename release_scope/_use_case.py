@@ -1,6 +1,6 @@
 import collections.abc
 import dataclasses
-import datetime
+import datetime as dt
 import http
 import typing
 from urllib.parse import quote
@@ -122,7 +122,7 @@ class CollectUseCase:
             for project in self._resolve_projects(groups=groups, projects=projects, include_subgroups=include_subgroups)
         ]
         return Report(
-            collected_at=datetime.datetime.now(datetime.UTC),
+            collected_at=dt.datetime.now(dt.UTC),
             production_environment=self.settings.production_environment,
             services=services,
             jira=self._read_issues(self.jira, _row_keys(services)) if self.jira else None,
@@ -148,7 +148,7 @@ class CollectUseCase:
             state.missing.extend(row_state.missing)
             state.error = row_state.error
         return Report(
-            collected_at=datetime.datetime.now(datetime.UTC),
+            collected_at=dt.datetime.now(dt.UTC),
             production_environment=self.settings.production_environment,
             services=services,
             jira=state,
@@ -380,7 +380,7 @@ class CollectUseCase:
         )
 
     def _commit_merge_requests(
-        self, project: Project, default_branch: str, commits: list[Commit], since: datetime.datetime, cache: Cache
+        self, project: Project, default_branch: str, commits: list[Commit], since: dt.datetime, cache: Cache
     ) -> dict[str, list[MergeRequest]]:
         merged: typing.Final = self.api.list_merged_merge_requests(
             project.id, target_branch=default_branch, updated_after=since

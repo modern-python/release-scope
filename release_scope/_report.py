@@ -1,4 +1,4 @@
-import datetime
+import datetime as dt
 import typing
 
 import pydantic
@@ -45,7 +45,7 @@ class CommitRef(pydantic.BaseModel):
     title: str
     url: str | None
     author: str | None
-    committed_at: datetime.datetime
+    committed_at: dt.datetime
 
 
 class JiraKeyRef(pydantic.BaseModel):
@@ -127,7 +127,7 @@ class JiraState(pydantic.BaseModel):
 
 class Report(pydantic.BaseModel):
     schema_version: typing.Literal[3] = SCHEMA_VERSION
-    collected_at: datetime.datetime
+    collected_at: dt.datetime
     production_environment: str
     services: list[Service]
     jira: JiraState | None = None
