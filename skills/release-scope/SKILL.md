@@ -47,7 +47,7 @@ token into the chat. Never echo a token.
 - Jira issue keys: `--jira KEY`, repeatable. It collects only the projects the issues link to, from production up to
   the latest linked change. It cannot be combined with `--group` or `--project`.
 - Projects the user wants left out: `--exclude GLOB`, repeatable, matched against the full project path (`*` also
-  matches `/`). It works with every selection above, and excluded projects are not queried.
+  matches `/`). It works with every selection above. Excluded projects are not queried and do not appear in Jira issue `links`.
 
 ## Collect
 

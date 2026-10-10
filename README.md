@@ -42,8 +42,9 @@ uvx release-scope collect --group team/backend --output public --cache cache.jso
 `--output` is a directory: `collect` writes `report.json` there, next to the page that shows it (see Site).
 `--group` and `--project` are repeatable and can be mixed. `--exclude` (`-x`) skips every project whose path
 matches a glob like `team/*-sandbox`. It is repeatable, `*` also matches `/`, and a skipped project is left out of
-the report without being queried. The command exits `1` when any service failed to collect; the report is still written and names the error on that service. A service GitLab denies access to fails
-alone, and its error lists the project settings and member page to check. A project with CI/CD or Environments
+the report without being queried, including from the GitLab links of Jira issues. The command exits `1` when any
+service failed to collect; the report is still written and names the error on that service. A service GitLab denies
+access to fails alone, and its error lists the project settings and member page to check. A project with CI/CD or Environments
 disabled is reported with a warning and no rows, without querying it. Only a rejected token, or a group or project
 passed on the command line that the token cannot see, stops the run. A failed Jira search is recorded in the report
 and also exits `1`; the GitLab part is still written.
@@ -93,7 +94,8 @@ Each service lists its `candidates`: the tags a release could ship, newest first
 rows it ships, the in-scope Jira keys of those rows, and the compare link from production, or the tag's commit history
 when the service has no production deployment. When rows sit above the newest tag, `untagged` counts them and gives
 the head commit, the next tag (the highest `X.Y.Z` tag with its minor version bumped, or `null` when no tag has that
-form), and `create_url`, GitLab's new-tag form filled in with both. One row, trimmed:
+form), and `create_url`, GitLab's new-tag form filled in with both. When the tag list was cut short, the next tag
+comes from one more request for the highest versions. One row, trimmed:
 
 ```json
 {
@@ -121,8 +123,9 @@ Jira's own error details, stay as written.
 **Services** lists every service with a production deployment or with rows, and every service that failed to collect,
 as one line: what production runs, the picked tag, how many merge requests or commits and Jira tasks it ships, the
 failed jobs of the picked tag, or of the newest tag before a pick, with the ones allowed to fail counted apart, a mark
-when the range was cut at `RELEASE_SCOPE_MAX_COMMITS`, and how many rows have no tag yet. The failed jobs are those of
-the tag's pipeline and of the main pipeline of its commit; failures in other rows show only when the line is opened.
+when the range was cut at `RELEASE_SCOPE_MAX_COMMITS`, and how many rows have no tag yet, with a `+` when the cut
+range holds no tag, so more untagged rows may lie below it. The failed jobs are those of the tag's pipeline and of
+the main pipeline of its commit; failures in other rows show only when the line is opened.
 Opening a line shows the service's environments, warnings, a link to create the next tag on the head when rows have no
 tag yet, merge requests that are not merged yet, and its rows with
 tags and their pipelines, merge requests or commits, Jira keys with their status, environments, and failed jobs; rows

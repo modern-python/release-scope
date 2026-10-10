@@ -67,6 +67,8 @@ def test_linked_projects_matching_an_exclude_glob_are_dropped(scoped: respx.Rout
 
     assert [item.project for item in report.services] == ["team/svc"]
     assert not scoped["project:team/web"].called
+    assert report.jira is not None
+    assert [item.project for item in report.jira.issues["SHOP-12"].links] == ["team/svc"]
 
 
 @pytest.mark.httpx2(assert_all_called=False)

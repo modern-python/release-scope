@@ -216,6 +216,14 @@ class GitLabApi:
     def list_tags(self, project_id: int) -> tuple[list[Tag], bool]:
         return self._pages(f"{_API}/projects/{project_id}/repository/tags", {}, _Tags, resource="repository")
 
+    def list_highest_tags(self, project_id: int) -> list[Tag]:
+        return self._get(
+            f"{_API}/projects/{project_id}/repository/tags",
+            {"order_by": "version", "sort": "desc", "per_page": _PER_PAGE},
+            _Tags,
+            resource="repository",
+        ).root
+
     def list_first_parent_commits(
         self, project_id: int, ref_range: str, *, max_items: int
     ) -> tuple[list[Commit], bool]:
