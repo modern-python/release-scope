@@ -7,7 +7,7 @@ import typing
 from urllib.parse import quote
 
 from release_scope._cache import Cache, CachedPipeline
-from release_scope._candidates import build_candidates
+from release_scope._candidates import build_candidates, build_untagged
 from release_scope._errors import AuthError, ConfigError, GitLabError, JiraError
 from release_scope._gitlab import Commit, Deployment, GitLabApi, MergeRequest, Pipeline, Project
 from release_scope._jira import JiraApi
@@ -298,6 +298,7 @@ class CollectUseCase:
             for draft, is_linked, is_in_scope in zip(drafts, linked, in_scope, strict=True)
         )
         service.candidates.extend(build_candidates(service, production))
+        service.untagged = build_untagged(service, (name for names in walk.tags_by_sha.values() for name in names))
         return service
 
     def _walk(

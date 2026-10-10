@@ -12,7 +12,7 @@ from release_scope._cache import Cache
 from release_scope._errors import AuthError, GitLabError
 from release_scope._gitlab import GitLabApi
 from release_scope._jira import JiraApi
-from release_scope._report import Message, MessageCode, Report, Service
+from release_scope._report import Message, MessageCode, Report, Service, Untagged
 from release_scope._settings import GitLabConfig, Settings
 from release_scope._use_case import CollectUseCase
 from tests.payloads import (
@@ -553,6 +553,67 @@ def test_service_already_on_production_has_no_rows(gitlab: respx.Router) -> None
 
     assert service.rows == []
     assert service.warnings == []
+    assert service.untagged is None
+
+
+def _tags(gitlab: respx.Router, tags: list[dict[str, typing.Any]]) -> None:
+    gitlab["tags"].respond(json=tags)
+    for tag in tags:
+        gitlab.get(f"{SERVICE_API}/pipelines", params={"ref": tag["name"]}).respond(json=[])
+
+
+@pytest.mark.usefixtures("gitlab")
+def test_rows_above_the_newest_tag_link_to_a_new_minor_tag_on_the_head() -> None:
+    assert _only_service(_collect()).untagged == Untagged(
+        rows=1,
+        head_sha="head",
+        next_tag="1.3.0",
+        create_url=f"{ENDPOINT}/team/svc/-/tags/new?tag_name=1.3.0&ref=head",
+    )
+
+
+@pytest.mark.httpx2(assert_all_called=False)
+def test_tagged_head_has_no_untagged_rows(gitlab: respx.Router) -> None:
+    _tags(gitlab, [{"name": "1.3.0", "commit": {"id": "head"}}, *TAGS])
+
+    assert _only_service(_collect()).untagged is None
+
+
+@pytest.mark.httpx2(assert_all_called=False)
+def test_range_without_tags_is_untagged_from_head_to_production(gitlab: respx.Router) -> None:
+    _tags(gitlab, [{"name": "1.0.0", "commit": {"id": "prod"}}])
+
+    untagged: typing.Final = _only_service(_collect()).untagged
+
+    assert untagged is not None
+    assert (untagged.rows, untagged.next_tag) == (5, "1.1.0")
+
+
+@pytest.mark.httpx2(assert_all_called=False)
+@pytest.mark.parametrize(
+    ("names", "next_tag"),
+    [
+        (["1.9.0", "1.10.0"], "1.11.0"),
+        (["v2.4.1"], "v2.5.0"),
+        (["2.0.0rc1", "1.4.2"], "1.5.0"),
+    ],
+)
+def test_next_tag_bumps_the_minor_of_the_highest_version(gitlab: respx.Router, names: list[str], next_tag: str) -> None:
+    _tags(gitlab, [{"name": name, "commit": {"id": "c3"}} for name in names])
+
+    untagged: typing.Final = _only_service(_collect()).untagged
+
+    assert untagged is not None
+    assert untagged.next_tag == next_tag
+
+
+@pytest.mark.httpx2(assert_all_called=False)
+def test_without_version_tags_the_link_only_picks_the_head(gitlab: respx.Router) -> None:
+    _tags(gitlab, [{"name": "release-7", "commit": {"id": "c3"}}])
+
+    assert _only_service(_collect()).untagged == Untagged(
+        rows=1, head_sha="head", next_tag=None, create_url=f"{ENDPOINT}/team/svc/-/tags/new?ref=head"
+    )
 
 
 def test_range_spanning_pages_is_read_to_the_end(gitlab: respx.Router) -> None:

@@ -131,6 +131,7 @@
               <span class="muted" x-text="productionRef(service) + ' →'"></span>
               <span x-show="pickOf(service)" class="picked-tag" x-text="picks[service.project]"></span>
               <span x-show="!pickOf(service)" class="muted" x-text="pickHint(service)"></span>
+              <span x-show="service.untagged" class="warn" x-text="service.untagged ? t('untagged', { count: service.untagged.rows }) : ''"></span>
             </span>
             <span class="muted" x-text="lineDetails(service)"></span>
             <span x-text="failureCounts(service)"></span>
@@ -147,6 +148,11 @@
             <template x-for="warning in service.warnings" :key="warning.text">
               <p class="warn message"><template x-for="(part, index) in messageParts(warning)" :key="index"><span><template x-if="part.url"><a :href="part.url" x-text="part.text"></a></template><template x-if="!part.url"><span x-text="part.text"></span></template></span></template></p>
             </template>
+            <p x-show="service.untagged" class="warn">
+              <span x-text="service.untagged ? t('untaggedRows', { count: service.untagged.rows }) : ''"></span>
+              <a :href="service.untagged && service.untagged.create_url"
+                x-text="service.untagged && service.untagged.next_tag ? t('createTag', { name: service.untagged.next_tag }) : t('createAnyTag')"></a>
+            </p>
             <p x-show="service.release && service.release.pending_merge_requests.length">
               <span x-text="t('notMerged')"></span>
               <template x-for="item in service.release ? service.release.pending_merge_requests : []" :key="item.iid">
@@ -324,7 +330,13 @@
       failedToCollect: "failed to collect",
       notInProduction: "not in production",
       pickTag: "pick a tag",
-      noTagYet: "no tag yet",
+      untagged: "{count} untagged",
+      untaggedRows: {
+        one: "{count} merge request or commit has no tag yet.",
+        other: "{count} merge requests or commits have no tag yet.",
+      },
+      createTag: "Create tag {name}",
+      createAnyTag: "Create a tag",
       upToDate: "up to date",
       rows: { one: "{count} merge request or commit", other: "{count} merge requests or commits" },
       rowsOf: { one: "{count} merge request or commit", other: "{count} merge requests or commits" },
@@ -386,7 +398,14 @@
       failedToCollect: "не удалось собрать",
       notInProduction: "нет на проде",
       pickTag: "выберите тег",
-      noTagYet: "тега ещё нет",
+      untagged: "{count} без тега",
+      untaggedRows: {
+        one: "{count} MR или коммит ещё без тега.",
+        few: "{count} MR или коммита ещё без тега.",
+        many: "{count} MR или коммитов ещё без тега.",
+      },
+      createTag: "Создать тег {name}",
+      createAnyTag: "Создать тег",
       upToDate: "всё на проде",
       rows: { one: "{count} MR или коммит", few: "{count} MR или коммита", many: "{count} MR или коммитов" },
       rowsOf: { one: "{count} MR или коммита", few: "{count} MR или коммитов", many: "{count} MR или коммитов" },
@@ -656,7 +675,7 @@
       },
       pickHint(service) {
         if (service.candidates.length) return this.t("pickTag");
-        return service.rows.length ? this.t("noTagYet") : this.t("upToDate");
+        return service.rows.length ? "" : this.t("upToDate");
       },
       lineDetails(service) {
         const candidate = this.pickOf(service);

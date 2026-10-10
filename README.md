@@ -91,7 +91,9 @@ issue type, linked GitLab changes), the `missing` keys Jira did not return, and 
 Warnings and errors, on services and in `jira`, are messages: a `code`, its `params`, and the English `text`.
 Each service lists its `candidates`: the tags a release could ship, newest first, each with its pipeline, the number of
 rows it ships, the in-scope Jira keys of those rows, and the compare link from production, or the tag's commit history
-when the service has no production deployment. One row, trimmed:
+when the service has no production deployment. When rows sit above the newest tag, `untagged` counts them and gives
+the head commit, the next tag (the highest `X.Y.Z` tag with its minor version bumped, or `null` when no tag has that
+form), and `create_url`, GitLab's new-tag form filled in with both. One row, trimmed:
 
 ```json
 {
@@ -118,8 +120,10 @@ Jira's own error details, stay as written.
 
 **Services** lists every service with a production deployment or with rows, and every service that failed to collect,
 as one line: what production runs, the picked tag, how many merge requests or commits and Jira tasks it ships, failed jobs
-with the ones allowed to fail counted apart, and a mark when the range was cut at `RELEASE_SCOPE_MAX_COMMITS`.
-Opening a line shows the service's environments, warnings, merge requests that are not merged yet, and its rows with
+with the ones allowed to fail counted apart, a mark when the range was cut at `RELEASE_SCOPE_MAX_COMMITS`, and how
+many rows have no tag yet.
+Opening a line shows the service's environments, warnings, a link to create the next tag on the head when rows have no
+tag yet, merge requests that are not merged yet, and its rows with
 tags and their pipelines, merge requests or commits, Jira keys with their status, environments, and failed jobs; rows
 out of scope are dimmed. Links, including the GitLab settings pages that warnings and errors point to, open in a new
 tab. Each tag has a **pick** button: picking it highlights the rows it ships and closes the line again. A `--jira`
@@ -155,7 +159,7 @@ release-report:
   rules:
     - if: $CI_PIPELINE_SOURCE == "schedule"
   script:
-    - uvx --from 'release-scope>=0.6,<0.7' release-scope collect --group team/backend --output public || [ $? -eq 1 ]
+    - uvx --from 'release-scope>=0.7,<0.8' release-scope collect --group team/backend --output public || [ $? -eq 1 ]
   pages: true
 ```
 
@@ -194,4 +198,4 @@ npx skills add modern-python/release-scope
 ```
 
 The agent reads the same environment variables as the CLI, so set them first as described under Configuration.
-The skill runs `release-scope>=0.6,<0.7`, the range whose flags and report schema it describes.
+The skill runs `release-scope>=0.7,<0.8`, the range whose flags and report schema it describes.
