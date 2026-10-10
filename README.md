@@ -40,8 +40,9 @@ uvx release-scope collect --group team/backend --output public --cache cache.jso
 ```
 
 `--output` is a directory: `collect` writes `report.json` there, next to the page that shows it (see Site).
-`--group` and `--project` are repeatable and can be mixed. The command exits `1` when any service failed to
-collect; the report is still written and names the error on that service. A service GitLab denies access to fails
+`--group` and `--project` are repeatable and can be mixed. `--exclude` (`-x`) skips every project whose path
+matches a glob like `team/*-sandbox`. It is repeatable, `*` also matches `/`, and a skipped project is left out of
+the report without being queried. The command exits `1` when any service failed to collect; the report is still written and names the error on that service. A service GitLab denies access to fails
 alone, and its error lists the project settings and member page to check. A project with CI/CD or Environments
 disabled is reported with a warning and no rows, without querying it. Only a rejected token, or a group or project
 passed on the command line that the token cannot see, stops the run. A failed Jira search is recorded in the report
@@ -62,6 +63,7 @@ neither looked up nor counted as tasks of a release. The service
 records the release state: `pending` with the nearest tag at or above that change (or none, when a new tag is
 needed), `in_production` when every linked merge request is already deployed, `not_merged` when only open merge
 requests link to it, or `not_found`. Open merge requests and merges into other branches are listed either way.
+`--exclude` drops linked projects the same way.
 `--jira` is repeatable and cannot be combined with `--group` or `--project`; an issue Jira does not return exits `1`.
 
 ## Configuration

@@ -63,6 +63,15 @@ def test_collect_writes_report_and_cache(gitlab: respx.Router, tmp_path: pathlib
     assert [gitlab[f"jobs:{pipeline_id}"].call_count for pipeline_id in (104, 103)] == [2, 1]
 
 
+@pytest.mark.httpx2(assert_all_called=False)
+@pytest.mark.usefixtures("cli_env", "gitlab")
+def test_collect_skips_excluded_projects(tmp_path: pathlib.Path) -> None:
+    result: typing.Final = _invoke("collect", "-g", "team", "--exclude", "team/*", "-o", str(tmp_path / "public"))
+
+    assert result.exit_code == 0, result.output
+    assert "0 services, 0 rows, 0 failed" in result.output
+
+
 @pytest.mark.usefixtures("cli_env", "gitlab")
 def test_unreadable_cache_is_ignored_with_a_warning(tmp_path: pathlib.Path) -> None:
     cache: typing.Final = tmp_path / "cache.json"

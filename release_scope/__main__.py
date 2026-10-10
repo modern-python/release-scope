@@ -74,6 +74,12 @@ def _collect_command(  # noqa: PLR0913, PLR0917
     project: typing.Annotated[
         list[str] | None, typer.Option("--project", "-p", help="GitLab project path; repeatable.")
     ] = None,
+    exclude: typing.Annotated[
+        list[str] | None,
+        typer.Option(
+            "--exclude", "-x", help="Glob of GitLab project paths to skip, like 'team/*-sandbox'; repeatable."
+        ),
+    ] = None,
     include_subgroups: typing.Annotated[
         bool, typer.Option("--include-subgroups", help="Also collect projects in subgroups of each --group.")
     ] = False,
@@ -91,9 +97,15 @@ def _collect_command(  # noqa: PLR0913, PLR0917
     if cache_warning:
         typer.echo(f"Warning: {cache_warning}", err=True)
     if jira:
-        report = use_case.for_issues(keys=list(dict.fromkeys(jira)), cache=cache)
+        report = use_case.for_issues(keys=list(dict.fromkeys(jira)), exclude=exclude or [], cache=cache)
     else:
-        report = use_case(groups=group or [], projects=project or [], include_subgroups=include_subgroups, cache=cache)
+        report = use_case(
+            groups=group or [],
+            projects=project or [],
+            exclude=exclude or [],
+            include_subgroups=include_subgroups,
+            cache=cache,
+        )
     write_site(output, report.model_dump_json(indent=2))
     if cache_path:
         cache.save(cache_path)

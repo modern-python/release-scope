@@ -1,6 +1,7 @@
 import collections.abc
 import dataclasses
 import datetime as dt
+import fnmatch
 import http
 import typing
 from urllib.parse import quote
@@ -87,6 +88,10 @@ def _commit_ref(commit: Commit) -> CommitRef:
     )
 
 
+def _excluded(path: str, patterns: collections.abc.Sequence[str]) -> bool:
+    return any(fnmatch.fnmatchcase(path, pattern) for pattern in patterns)
+
+
 def _row_keys(services: list[Service]) -> list[str]:
     return sorted({key.key for service in services for row in service.rows if row.in_scope for key in row.jira_keys})
 
@@ -123,12 +128,19 @@ class CollectUseCase:
         *,
         groups: collections.abc.Sequence[str],
         projects: collections.abc.Sequence[str],
+        exclude: collections.abc.Sequence[str],
         include_subgroups: bool,
         cache: Cache,
     ) -> Report:
+        resolved: typing.Final = self._resolve_projects(
+            groups=groups,
+            projects=[path for path in projects if not _excluded(path, exclude)],
+            include_subgroups=include_subgroups,
+        )
         services: typing.Final = [
             self._collect_or_explain(project, cache, links=None)
-            for project in self._resolve_projects(groups=groups, projects=projects, include_subgroups=include_subgroups)
+            for project in resolved
+            if not _excluded(project.path_with_namespace, exclude)
         ]
         return Report(
             collected_at=dt.datetime.now(dt.UTC),
@@ -137,7 +149,9 @@ class CollectUseCase:
             jira=self._read_issues(self.jira, _row_keys(services)) if self.jira else None,
         )
 
-    def for_issues(self, *, keys: collections.abc.Sequence[str], cache: Cache) -> Report:
+    def for_issues(
+        self, *, keys: collections.abc.Sequence[str], exclude: collections.abc.Sequence[str], cache: Cache
+    ) -> Report:
         if self.jira is None:
             msg = "--jira needs RELEASE_SCOPE_JIRA_ENDPOINT and RELEASE_SCOPE_JIRA_TOKEN."
             raise ConfigError(msg)
@@ -148,7 +162,8 @@ class CollectUseCase:
             for key in keys:
                 issue = state.issues.get(key)
                 for link in issue.links if issue else []:
-                    links_by_project.setdefault(link.project, []).append(link)
+                    if not _excluded(link.project, exclude):
+                        links_by_project.setdefault(link.project, []).append(link)
             services.extend(
                 self._scoped_service(path, links_by_project[path], cache) for path in sorted(links_by_project)
             )

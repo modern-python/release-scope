@@ -23,7 +23,7 @@ from tests.payloads import (
 )
 
 
-def _scope(*keys: str, cache: Cache | None = None) -> Report:
+def _scope(*keys: str, cache: Cache | None = None, exclude: tuple[str, ...] = ()) -> Report:
     use_case: typing.Final = CollectUseCase(
         api=GitLabApi(http=httpware.Client(base_url=ENDPOINT)),
         jira=JiraApi(http=httpware.Client(base_url=JIRA_ENDPOINT)),
@@ -34,7 +34,7 @@ def _scope(*keys: str, cache: Cache | None = None) -> Report:
             jira_project_keys=["SHOP"],
         ),
     )
-    return use_case.for_issues(keys=list(keys) or ["SHOP-12"], cache=cache or Cache())
+    return use_case.for_issues(keys=list(keys) or ["SHOP-12"], exclude=exclude, cache=cache or Cache())
 
 
 def _service(report: Report, path: str = "team/svc") -> Service:
@@ -59,6 +59,14 @@ def test_scope_collects_every_service_the_issues_link_to() -> None:
     )
     assert _service(report, "team/web").project_url == f"{ENDPOINT}/team/web"
     assert _service(report, "team/worker").warnings[0].code == MessageCode.CI_DISABLED
+
+
+@pytest.mark.httpx2(assert_all_called=False)
+def test_linked_projects_matching_an_exclude_glob_are_dropped(scoped: respx.Router) -> None:
+    report: typing.Final = _scope(exclude=("team/w*",))
+
+    assert [item.project for item in report.services] == ["team/svc"]
+    assert not scoped["project:team/web"].called
 
 
 @pytest.mark.httpx2(assert_all_called=False)

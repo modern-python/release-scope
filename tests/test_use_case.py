@@ -51,6 +51,7 @@ def _collect(
     *,
     groups: tuple[str, ...] = ("team",),
     projects: tuple[str, ...] = (),
+    exclude: tuple[str, ...] = (),
     with_jira: bool = False,
     **overrides: typing.Any,  # noqa: ANN401
 ) -> Report:
@@ -59,7 +60,7 @@ def _collect(
         jira=JiraApi(http=httpware.Client(base_url=JIRA_ENDPOINT)) if with_jira else None,
         settings=_settings(**overrides),
     )
-    return use_case(groups=groups, projects=projects, include_subgroups=False, cache=cache or Cache())
+    return use_case(groups=groups, projects=projects, exclude=exclude, include_subgroups=False, cache=cache or Cache())
 
 
 def _only_service(report: Report) -> Service:
@@ -499,6 +500,19 @@ def test_project_listed_twice_is_collected_once(gitlab: respx.Router) -> None:
     report: typing.Final = _collect(projects=("team/svc",))
 
     assert [item.project for item in report.services] == ["team/svc"]
+
+
+@pytest.mark.usefixtures("gitlab")
+def test_excluded_project_is_not_fetched() -> None:
+    report: typing.Final = _collect(projects=("team/old",), exclude=("team/old", "other/*"))
+
+    assert [item.project for item in report.services] == ["team/svc"]
+
+
+@pytest.mark.httpx2(assert_all_called=False)
+@pytest.mark.usefixtures("gitlab")
+def test_group_projects_matching_an_exclude_glob_are_dropped() -> None:
+    assert _collect(exclude=("team/s*",)).services == []
 
 
 def test_service_without_production_deployment_lists_the_whole_default_branch(gitlab: respx.Router) -> None:
