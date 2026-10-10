@@ -55,5 +55,9 @@ production.
 The rows above the newest row with a tag, or every row when none has one. Only a tag that does not exist yet can
 ship them. The next tag is the highest `X.Y.Z` tag with its minor version bumped.
 
+**First deployment**:
+For a row and an environment other than production, when the deploy job finished that first shipped the row or a
+newer row to it. A later rollback does not undo it.
+
 **Settled fact**:
 Data GitLab will not change for the same key, and so the only data the cache may hold.

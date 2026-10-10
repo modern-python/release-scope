@@ -16,6 +16,7 @@ from tests.payloads import (
     LINKED_MERGE_REQUEST,
     MERGED_MERGE_REQUESTS,
     PREVIEW_DEPLOYMENT,
+    PREVIEW_DEPLOYMENTS,
     PRODUCTION_DEPLOYMENT,
     PUSH_PIPELINES,
     SERVICE,
@@ -54,6 +55,11 @@ def gitlab(httpx2_mock: respx.Router) -> respx.Router:
     httpx2_mock.get(
         f"{SERVICE_API}/deployments", params={"environment": "production"}, name="deploy:production"
     ).respond(json=[PRODUCTION_DEPLOYMENT])
+    httpx2_mock.get(
+        f"{SERVICE_API}/deployments",
+        params={"environment": "preview", "order_by": "finished_at"},
+        name="deployments:preview",
+    ).respond(json=PREVIEW_DEPLOYMENTS)
     httpx2_mock.get(f"{SERVICE_API}/deployments", params={"environment": "preview"}, name="deploy:preview").respond(
         json=[PREVIEW_DEPLOYMENT]
     )

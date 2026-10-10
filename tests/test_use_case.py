@@ -1,3 +1,4 @@
+import datetime as dt
 import json
 import typing
 
@@ -22,6 +23,7 @@ from tests.payloads import (
     JIRA_ENDPOINT,
     JIRA_ISSUE_API,
     JIRA_ISSUES,
+    PREVIEW_DEPLOYMENTS,
     PRODUCTION_DEPLOYMENT,
     PUSH_PIPELINES,
     SERVICE,
@@ -93,6 +95,54 @@ def test_only_rows_holding_a_deployed_commit_name_the_environment() -> None:
     service: typing.Final = _only_service(_collect())
 
     assert [row.environments for row in service.rows] == [[], ["preview"], [], [], []]
+
+
+def test_rows_carry_when_each_environment_first_ran_them(gitlab: respx.Router) -> None:
+    service: typing.Final = _only_service(_collect())
+
+    assert [row.first_deployed_at for row in service.rows] == [
+        {},
+        {"preview": dt.datetime(2026, 9, 22, tzinfo=dt.UTC)},
+        {"preview": dt.datetime(2026, 9, 21, 9, tzinfo=dt.UTC)},
+        {"preview": dt.datetime(2026, 9, 21, 9, tzinfo=dt.UTC)},
+        {"preview": dt.datetime(2026, 9, 19, 12, tzinfo=dt.UTC)},
+    ]
+    params: typing.Final = gitlab["deployments:preview"].calls.last.request.url.params
+    assert params["status"] == "success"
+    assert params["finished_after"] == "2026-09-18T00:00:00+00:00"
+    assert [
+        call.request.url.params["environment"]
+        for call in gitlab.calls
+        if call.request.url.path.endswith("/deployments") and "finished_after" in call.request.url.params
+    ] == ["preview"]
+
+
+def test_environment_shows_when_its_deploy_job_finished(gitlab: respx.Router) -> None:
+    gitlab["deploy:production"].respond(
+        json=[{**PRODUCTION_DEPLOYMENT, "deployable": {"tag": True, "finished_at": "2026-09-01T00:30:00+03:00"}}]
+    )
+
+    environments: typing.Final = _only_service(_collect()).environments
+
+    assert [item.deployed_at for item in environments] == [
+        dt.datetime(2026, 8, 31, 21, 30, tzinfo=dt.UTC),
+        dt.datetime(2026, 9, 22, tzinfo=dt.UTC),
+    ]
+
+
+def test_long_deployment_history_is_truncated_with_a_warning(gitlab: respx.Router) -> None:
+    gitlab["deployments:preview"].respond(json=PREVIEW_DEPLOYMENTS[:2], headers={"x-next-page": "2"})
+
+    service: typing.Final = _only_service(_collect())
+
+    assert service.warnings == [
+        Message(
+            code=MessageCode.DEPLOYMENTS_TRUNCATED,
+            params={"environment": "preview"},
+            text="Deployment history of preview was truncated; newer rows may miss when they reached it.",
+        )
+    ]
+    assert gitlab["deployments:preview"].call_count == 50
 
 
 @pytest.mark.usefixtures("gitlab")

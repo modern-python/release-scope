@@ -15,6 +15,7 @@ from release_scope._jira_keys import extract_jira_keys
 from release_scope._links import parse_gitlab_link
 from release_scope._messages import (
     commits_truncated,
+    deployments_truncated,
     explain_failure,
     merged_elsewhere,
     no_default_branch,
@@ -39,7 +40,7 @@ from release_scope._report import (
     Service,
     TagRef,
 )
-from release_scope._rows import RowDraft, group_rows, match_merge_requests
+from release_scope._rows import RowDraft, first_deployed, group_rows, match_merge_requests
 from release_scope._settings import Settings
 
 
@@ -60,7 +61,7 @@ def _environment_state(name: str, deployment: Deployment) -> EnvironmentState:
         name=name,
         ref=deployment.ref,
         sha=deployment.sha,
-        deployed_at=deployment.created_at,
+        deployed_at=deployment.finished_at,
         deployment_url=deployment.deployable.web_url if deployment.deployable else None,
         tag=deployment.deployable.tag if deployment.deployable else False,
     )
@@ -103,6 +104,7 @@ class _Walk:
     tags_by_sha: dict[str, list[str]] = dataclasses.field(default_factory=dict)
     tag_names: list[str] = dataclasses.field(default_factory=list)
     main_pipelines: dict[str, Pipeline] = dataclasses.field(default_factory=dict)
+    deployments: dict[str, list[Deployment]] = dataclasses.field(default_factory=dict)
 
 
 @dataclasses.dataclass(frozen=True, slots=True, kw_only=True)
@@ -290,6 +292,7 @@ class CollectUseCase:
         drafts, linked, in_scope = walk.drafts, [False] * len(walk.drafts), [True] * len(walk.drafts)
         if links is not None:
             drafts, linked, in_scope = self._scope_rows(project, project.default_branch, service, walk, links, cache)
+        deployed: typing.Final = first_deployed(drafts, walk.deployments)
         service.rows.extend(
             self._build_row(
                 project=project,
@@ -298,8 +301,8 @@ class CollectUseCase:
                 main_pipelines=walk.main_pipelines,
                 environments=service.environments,
                 cache=cache,
-            ).model_copy(update={"linked": is_linked, "in_scope": is_in_scope})
-            for draft, is_linked, is_in_scope in zip(drafts, linked, in_scope, strict=True)
+            ).model_copy(update={"linked": is_linked, "in_scope": is_in_scope, "first_deployed_at": times})
+            for draft, is_linked, is_in_scope, times in zip(drafts, linked, in_scope, deployed, strict=True)
         )
         service.candidates.extend(build_candidates(service, production))
         service.untagged = build_untagged(service, walk.tag_names)
@@ -331,6 +334,14 @@ class CollectUseCase:
         walk.main_pipelines = self._latest_by_sha(
             self.api.list_push_pipelines(project.id, ref=default_branch, updated_after=since)
         )
+        for name in self.settings.environments:
+            if name == self.settings.production_environment:
+                continue
+            walk.deployments[name], history_cut = self.api.list_successful_deployments(
+                project.id, name, finished_after=since
+            )
+            if history_cut:
+                service.warnings.append(deployments_truncated(name))
         return walk
 
     def _scope_rows(  # noqa: PLR0913, PLR0917

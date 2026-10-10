@@ -90,6 +90,24 @@ PREVIEW_DEPLOYMENT: typing.Final = {
     "created_at": "2026-09-22T00:00:00Z",
     "deployable": None,
 }
+PREVIEW_DEPLOYMENTS: typing.Final = [
+    {**PRODUCTION_DEPLOYMENT, "id": 3, "deployable": {"finished_at": "2026-09-02T00:00:00Z"}},
+    {
+        "id": 4,
+        "ref": "main",
+        "sha": "c0b",
+        "created_at": "2026-09-19T10:00:00Z",
+        "deployable": {"finished_at": "2026-09-19T12:00:00Z"},
+    },
+    {
+        "id": 6,
+        "ref": "main",
+        "sha": "c2",
+        "created_at": "2026-09-21T10:00:00Z",
+        "deployable": {"finished_at": "2026-09-21T12:00:00+03:00"},
+    },
+    PREVIEW_DEPLOYMENT,
+]
 COMMITS: typing.Final = [
     commit("head", "SHOP-9 hotfix typo", date="2026-09-25T00:00:00Z"),
     commit("c3", "Merge branch 'branch-12'", date="2026-09-22T00:00:00Z"),

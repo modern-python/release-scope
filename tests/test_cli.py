@@ -49,7 +49,7 @@ def test_collect_writes_report_and_cache(gitlab: respx.Router, tmp_path: pathlib
         "report.json",
     ]
     report: typing.Final = json.loads((output / "report.json").read_text())
-    assert report["schema_version"] == 5
+    assert report["schema_version"] == 6
     assert report["jira"] is None
     assert report["production_environment"] == "production"
     assert [len(item["rows"]) for item in report["services"]] == [5]

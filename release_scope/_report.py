@@ -5,7 +5,7 @@ import typing
 import pydantic
 
 
-SCHEMA_VERSION: typing.Final = 5
+SCHEMA_VERSION: typing.Final = 6
 
 
 class MessageCode(enum.StrEnum):
@@ -15,6 +15,7 @@ class MessageCode(enum.StrEnum):
     NO_PRODUCTION = "no_production"
     COMMITS_TRUNCATED = "commits_truncated"
     TAGS_TRUNCATED = "tags_truncated"
+    DEPLOYMENTS_TRUNCATED = "deployments_truncated"
     MERGED_ELSEWHERE = "merged_elsewhere"
     GITLAB_UNREACHABLE = "gitlab_unreachable"
     GITLAB_STATUS = "gitlab_status"
@@ -83,6 +84,7 @@ class Row(pydantic.BaseModel):
     commits: list[CommitRef]
     jira_keys: list[JiraKeyRef]
     environments: list[str]
+    first_deployed_at: dict[str, dt.datetime] = pydantic.Field(default_factory=dict)
     main_pipeline: PipelineState | None
     linked: bool = False
     in_scope: bool = True
@@ -92,7 +94,7 @@ class EnvironmentState(pydantic.BaseModel):
     name: str
     ref: str
     sha: str
-    deployed_at: str
+    deployed_at: dt.datetime
     deployment_url: str | None
     tag: bool = False
 
@@ -157,7 +159,7 @@ class JiraState(pydantic.BaseModel):
 
 
 class Report(pydantic.BaseModel):
-    schema_version: typing.Literal[5] = SCHEMA_VERSION
+    schema_version: typing.Literal[6] = SCHEMA_VERSION
     collected_at: dt.datetime
     production_environment: str
     services: list[Service]

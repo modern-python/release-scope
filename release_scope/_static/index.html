@@ -102,7 +102,7 @@
     <div>
       <h1 x-text="report.jira_scope.length ? t('titleIssues', { keys: report.jira_scope.join(', ') }) : t('title')"></h1>
       <p class="muted">
-        <span x-text="t('rangeStart', { at: collectedAt })"></span>
+        <span :title="report.collected_at" x-text="t('rangeStart', { at: collectedAt })"></span>
         <code x-text="report.production_environment"></code>
         <span x-text="report.jira_scope.length ? t('rangeEndIssues') : t('rangeEnd')"></span>
       </p>
@@ -206,7 +206,15 @@
                           </div>
                         </template>
                       </td>
-                      <td x-text="row.environments.join(', ')"></td>
+                      <td>
+                        <template x-for="item in deployments(row)" :key="item.name">
+                          <div class="tag" :title="item.at">
+                            <span x-text="item.name"></span>
+                            <span x-show="item.at" class="muted" x-text="item.at && formatTime(item.at)"></span>
+                            <span x-show="item.now" x-text="t('deployedNow')"></span>
+                          </div>
+                        </template>
+                      </td>
                       <td>
                         <template x-for="(line, position) in failedJobs(row)" :key="position">
                           <div>
@@ -318,7 +326,7 @@
       loadFailed: "Cannot load the report: {error}.",
       title: "Release scope",
       titleIssues: "Release scope: {keys}",
-      rangeStart: "Collected {at} UTC. Changes run from the commit on",
+      rangeStart: "Collected {at}. Changes run from the commit on",
       rangeEnd: "to the head of the default branch.",
       rangeEndIssues:
         "to the head of the default branch; rows above the latest merge request or commit linked to the issues are out of scope.",
@@ -355,6 +363,7 @@
       columnTag: "Tag",
       columnChange: "Change",
       columnDeployed: "Deployed to",
+      deployedNow: "(now)",
       columnFailed: "Failed jobs",
       pick: "pick",
       picked: "picked",
@@ -391,7 +400,7 @@
       loadFailed: "Не удалось загрузить отчёт: {error}.",
       title: "Состав релиза",
       titleIssues: "Состав релиза: {keys}",
-      rangeStart: "Данные собраны {at} UTC. Показаны изменения от коммита на",
+      rangeStart: "Данные собраны {at}. Показаны изменения от коммита на",
       rangeEnd: "до последнего коммита основной ветки.",
       rangeEndIssues:
         "до последнего коммита основной ветки; строки выше последнего MR или коммита, связанного с задачами, вне скоупа.",
@@ -430,6 +439,7 @@
       columnTag: "Тег",
       columnChange: "Изменение",
       columnDeployed: "Задеплоено на",
+      deployedNow: "(сейчас)",
       columnFailed: "Упавшие джобы",
       pick: "выбрать",
       picked: "выбран",
@@ -488,6 +498,7 @@
         `Нет успешного деплоя на «${p.environment}»; строки начинаются с первого коммита ветки ${p.branch}.`,
       commits_truncated: (p) => `Достигнут лимит коммитов (${p.max_commits}); более старые изменения не показаны.`,
       tags_truncated: () => "Список тегов обрезан; у некоторых строк теги могут не отображаться.",
+      deployments_truncated: (p) => `История деплоев на ${p.environment} обрезана; у новых строк может не быть времени деплоя.`,
       merged_elsewhere: (p) => `!${p.iid} влит в ${p.target_branch}, а не в ${p.default_branch}.`,
       gitlab_unreachable: (p) => `${p.project}: не удалось получить ${resourceAccusativeRu(p)} из GitLab (${p.reason}).`,
       gitlab_status: (p) => `${p.project}: не удалось получить ${resourceAccusativeRu(p)} из GitLab: ответ ${p.status}.`,
@@ -580,7 +591,12 @@
       },
 
       get collectedAt() {
-        return this.report.collected_at.slice(0, 16).replace("T", " ");
+        return this.formatTime(this.report.collected_at);
+      },
+      formatTime(value) {
+        const date = new Date(value);
+        const pad = (number) => String(number).padStart(2, "0");
+        return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
       },
       get listed() {
         return this.report.services.filter((service) => service.error || this.production(service) || service.rows.length);
@@ -714,6 +730,10 @@
       },
       isMissing(key) {
         return Boolean(this.report.jira && this.report.jira.missing.includes(key));
+      },
+      deployments(row) {
+        const names = [...new Set([...Object.keys(row.first_deployed_at), ...row.environments])];
+        return names.map((name) => ({ name, at: row.first_deployed_at[name], now: row.environments.includes(name) }));
       },
       environment(service, name) {
         return service.environments.find((item) => item.name === name);
