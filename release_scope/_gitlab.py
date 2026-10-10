@@ -1,5 +1,5 @@
 import dataclasses
-import datetime
+import datetime as dt
 import math
 import typing
 from urllib.parse import quote, unquote
@@ -54,7 +54,7 @@ class Commit(pydantic.BaseModel):
     title: str
     message: str = ""
     author_name: str | None = None
-    committed_date: datetime.datetime
+    committed_date: dt.datetime
     web_url: str | None = None
 
 
@@ -228,7 +228,7 @@ class GitLabApi:
         )
 
     def list_merged_merge_requests(
-        self, project_id: int, *, target_branch: str, updated_after: datetime.datetime
+        self, project_id: int, *, target_branch: str, updated_after: dt.datetime
     ) -> list[MergeRequest]:
         merge_requests, _ = self._pages(
             f"{_API}/projects/{project_id}/merge_requests",
@@ -252,7 +252,7 @@ class GitLabApi:
         )
         return merge_requests
 
-    def list_push_pipelines(self, project_id: int, *, ref: str, updated_after: datetime.datetime) -> list[Pipeline]:
+    def list_push_pipelines(self, project_id: int, *, ref: str, updated_after: dt.datetime) -> list[Pipeline]:
         pipelines, _ = self._pages(
             f"{_API}/projects/{project_id}/pipelines",
             {"ref": ref, "source": "push", "updated_after": updated_after.isoformat()},
