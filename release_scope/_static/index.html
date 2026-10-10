@@ -141,7 +141,8 @@
             <p>
               <a :href="service.project_url" x-text="service.project"></a>
               <template x-for="item in service.environments" :key="item.name">
-                <span> · <span x-text="item.name"></span> <a :href="item.deployment_url" x-text="item.ref"></a></span>
+                <span> · <span x-text="item.name"></span> <a :href="item.deployment_url" x-text="item.ref"></a>
+                  <span class="muted" :title="item.deployed_at" x-text="formatTime(item.deployed_at)"></span></span>
               </template>
             </p>
             <p x-show="service.error" class="bad message"><template x-for="(part, index) in messageParts(service.error)" :key="index"><span><template x-if="part.url"><a :href="part.url" x-text="part.text"></a></template><template x-if="!part.url"><span x-text="part.text"></span></template></span></template></p>
@@ -187,12 +188,14 @@
                           <div>
                             <a :href="item.url" x-text="'!' + item.iid"></a>
                             <span x-text="item.title + (item.author ? ' · @' + item.author : '')"></span>
+                            <span x-show="item.merged_at" class="muted" :title="item.merged_at" x-text="item.merged_at && formatTime(item.merged_at)"></span>
                           </div>
                         </template>
                         <template x-for="item in row.merge_requests.length ? [] : row.commits" :key="item.sha">
                           <div>
                             <a :href="item.url"><code x-text="item.short_sha"></code></a>
                             <span x-text="item.title + (item.author ? ' · ' + item.author : '')"></span>
+                            <span class="muted" :title="item.committed_at" x-text="formatTime(item.committed_at)"></span>
                           </div>
                         </template>
                         <span x-show="!row.in_scope" class="muted" x-text="t('outOfScope')"></span>

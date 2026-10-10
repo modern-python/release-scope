@@ -130,11 +130,11 @@ failed jobs of the picked tag, or of the newest tag before a pick, with the ones
 when the range was cut at `RELEASE_SCOPE_MAX_COMMITS`, and how many rows have no tag yet, with a `+` when the cut
 range holds no tag, so more untagged rows may lie below it. The failed jobs are those of the tag's pipeline and of
 the main pipeline of its commit; failures in other rows show only when the line is opened.
-Opening a line shows the service's environments, warnings, a link to create the next tag on the head when rows have no
-tag yet, merge requests that are not merged yet, and its rows with
-tags and their pipelines, merge requests or commits, Jira keys with their status, environments with the time each
-first ran the row, and failed jobs; rows
-out of scope are dimmed. Links, including the GitLab settings pages that warnings and errors point to, open in a new
+Opening a line shows the service's environments with when each was deployed, warnings, a link to create the next tag
+on the head when rows have no tag yet, merge requests that are not merged yet, and its rows with tags and their
+pipelines, merge requests or commits with when they were merged or committed, Jira keys with their status,
+environments with the time each first ran the row, and failed jobs; rows out of scope are dimmed.
+Links, including the GitLab settings pages that warnings and errors point to, open in a new
 tab. Each tag has a **pick** button: picking it highlights the rows it ships and closes the line again. A `--jira`
 report starts with each service's release tag picked. Services with neither a production deployment nor rows are left
 out of the page.
