@@ -5,7 +5,7 @@ import typing
 import pydantic
 
 
-SCHEMA_VERSION: typing.Final = 4
+SCHEMA_VERSION: typing.Final = 5
 
 
 class MessageCode(enum.StrEnum):
@@ -110,6 +110,13 @@ class Candidate(pydantic.BaseModel):
     jira_keys: list[JiraKeyRef]
 
 
+class Untagged(pydantic.BaseModel):
+    rows: int
+    head_sha: str
+    next_tag: str | None
+    create_url: str
+
+
 class Service(pydantic.BaseModel):
     project: str
     project_url: str
@@ -121,6 +128,7 @@ class Service(pydantic.BaseModel):
     warnings: list[Message] = pydantic.Field(default_factory=list)
     error: Message | None = None
     release: Release | None = None
+    untagged: Untagged | None = None
 
 
 class LinkedChange(pydantic.BaseModel):
@@ -149,7 +157,7 @@ class JiraState(pydantic.BaseModel):
 
 
 class Report(pydantic.BaseModel):
-    schema_version: typing.Literal[4] = SCHEMA_VERSION
+    schema_version: typing.Literal[5] = SCHEMA_VERSION
     collected_at: dt.datetime
     production_environment: str
     services: list[Service]

@@ -14,7 +14,7 @@ description: >
 through uvx with this version range; it matches the flags and report schema described here:
 
 ```bash
-uvx --from 'release-scope>=0.6,<0.7' release-scope --help
+uvx --from 'release-scope>=0.7,<0.8' release-scope --help
 ```
 
 ## Check the settings
@@ -46,6 +46,8 @@ token into the chat. Never echo a token.
   `--include-subgroups` also collects subgroups of each group.
 - Jira issue keys: `--jira KEY`, repeatable. It collects only the projects the issues link to, from production up to
   the latest linked change. It cannot be combined with `--group` or `--project`.
+- Projects the user wants left out: `--exclude GLOB`, repeatable, matched against the full project path (`*` also
+  matches `/`). It works with every selection above, and excluded projects are not queried.
 
 ## Collect
 
@@ -56,7 +58,7 @@ run and only saves requests:
 ```bash
 out="${XDG_CACHE_HOME:-$HOME/.cache}/release-scope"
 mkdir -p "$out"
-uvx --from 'release-scope>=0.6,<0.7' release-scope collect --project team/backend/shop \
+uvx --from 'release-scope>=0.7,<0.8' release-scope collect --project team/backend/shop \
   --output "$out/site" --cache "$out/cache.json"
 ```
 
@@ -85,6 +87,9 @@ Read `$out/site/report.json` and answer the user's question from it, briefly.
 - A service never deployed to production has a `no_production` warning; its rows run down to the first commit of the
   default branch and its `compare_url` lists the tag's commits.
 - `truncated: true`: the walk stopped at `RELEASE_SCOPE_MAX_COMMITS`, so the oldest candidates miss rows and keys.
+- `untagged`: the rows above the newest tag, which no existing tag ships. It has `rows`, `head_sha`, `next_tag` (the
+  highest `X.Y.Z` tag with its minor version bumped, or `null`), and `create_url`, GitLab's new-tag form for the head.
+  It is `null` when the head is tagged or the service has no rows.
 - `candidates` (newest first): the tags a release could ship, each with `tag` and its `pipeline`, `rows` (how many
   rows run from that tag down to production), `jira_keys` (the in-scope keys of those rows, without duplicates), and
   `compare_url`.

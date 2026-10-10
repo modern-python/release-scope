@@ -51,5 +51,9 @@ A tag in the range that a release could ship. It carries what shipping it means:
 production baseline, the Jira keys of those rows that are in scope, its tag pipeline, and the compare link from
 production.
 
+**Untagged rows**:
+The rows above the newest row with a tag, or every row when none has one. Only a tag that does not exist yet can
+ship them. The next tag is the highest `X.Y.Z` tag with its minor version bumped.
+
 **Settled fact**:
 Data GitLab will not change for the same key, and so the only data the cache may hold.
