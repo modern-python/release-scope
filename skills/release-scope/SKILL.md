@@ -14,7 +14,7 @@ description: >
 through uvx with this version range; it matches the flags and report schema described here:
 
 ```bash
-uvx --from 'release-scope>=0.5,<0.6' release-scope --help
+uvx --from 'release-scope>=0.6,<0.7' release-scope --help
 ```
 
 ## Check the settings
@@ -56,7 +56,7 @@ run and only saves requests:
 ```bash
 out="${XDG_CACHE_HOME:-$HOME/.cache}/release-scope"
 mkdir -p "$out"
-uvx --from 'release-scope>=0.5,<0.6' release-scope collect --project team/backend/shop \
+uvx --from 'release-scope>=0.6,<0.7' release-scope collect --project team/backend/shop \
   --output "$out/site" --cache "$out/cache.json"
 ```
 
@@ -76,12 +76,13 @@ For `2` to `4` nothing was written; show the message and stop.
 Read `$out/site/report.json` and answer the user's question from it, briefly.
 
 - `services[]`: `project`, `environments` (what each environment runs), `rows` (newest first, from the default
-  branch head down to production), `warnings`, `error`.
+  branch head down to production), `warnings`, `error`. Warnings and errors are messages: read their `text`;
+  `code` and `params` carry the same facts in structured form.
 - A row is one merged merge request or a direct commit: `merge_requests`, `commits`, `tags` pointing into it,
   `environments` already running it, `jira_keys`, and `main_pipeline` with `failed_jobs`. Tag pipelines carry their
   own `failed_jobs`.
 - A service with no rows is up to date with production.
-- A service never deployed to production has a warning saying so; its rows run down to the first commit of the
+- A service never deployed to production has a `no_production` warning; its rows run down to the first commit of the
   default branch and its `compare_url` lists the tag's commits.
 - `truncated: true`: the walk stopped at `RELEASE_SCOPE_MAX_COMMITS`, so the oldest candidates miss rows and keys.
 - `candidates` (newest first): the tags a release could ship, each with `tag` and its `pipeline`, `rows` (how many
@@ -89,7 +90,7 @@ Read `$out/site/report.json` and answer the user's question from it, briefly.
   `compare_url`.
   To answer which issues a set of tags releases, merge the `jira_keys` of the picked candidates.
 - `jira.issues` by key: `summary`, `status`, `status_category` (anything but `done` is not done), `links` to GitLab
-  merge requests and commits. `jira.missing` lists keys Jira did not return; `jira.error` a failed request. `jira` is
+  merge requests and commits. `jira.missing` lists keys Jira did not return; `jira.error` a failed request, as a message. `jira` is
   `null` without a Jira token.
 - In a `--jira` report, `jira_scope` lists the issues, rows with `linked: true` are the ones the issues point to,
   rows with `in_scope: false` sit above the latest linked change and do not ship with the issues, and each service

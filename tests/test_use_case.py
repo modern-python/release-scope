@@ -12,7 +12,7 @@ from release_scope._cache import Cache
 from release_scope._errors import AuthError, GitLabError
 from release_scope._gitlab import GitLabApi
 from release_scope._jira import JiraApi
-from release_scope._report import Report, Service
+from release_scope._report import Message, MessageCode, Report, Service
 from release_scope._settings import GitLabConfig, Settings
 from release_scope._use_case import CollectUseCase
 from tests.payloads import (
@@ -266,7 +266,8 @@ def test_jira_failure_is_reported_and_services_are_kept(
     report: typing.Final = _collect(with_jira=True)
 
     assert report.jira is not None
-    assert report.jira.error == error
+    assert report.jira.error is not None
+    assert report.jira.error.text == error
     assert report.jira.issues == {}
     assert len(_only_service(report).rows) == 5
 
@@ -293,7 +294,11 @@ def test_remote_link_failure_is_reported_and_keeps_the_issues(jira: respx.Router
     state: typing.Final = _collect(with_jira=True).jira
 
     assert state is not None
-    assert state.error == "Jira returned 404 for the remote links of SHOP-12."
+    assert state.error == Message(
+        code=MessageCode.JIRA_STATUS,
+        params={"status": 404, "detail": "", "issue": "SHOP-12"},
+        text="Jira returned 404 for the remote links of SHOP-12.",
+    )
     assert sorted(state.issues) == ["SHOP-12", "SHOP-9"]
 
 
@@ -337,7 +342,7 @@ def test_a_failing_service_keeps_its_cache_and_does_not_stop_the_others(gitlab: 
 
     report: typing.Final = _collect(next_cache)
 
-    assert [(item.project, item.error) for item in report.services] == [
+    assert [(item.project, item.error and item.error.text) for item in report.services] == [
         ("team/broken", "team/broken: GitLab returned 500 for deployments."),
         ("team/svc", "team/svc: GitLab returned 502 for deployments."),
     ]
@@ -352,7 +357,19 @@ def test_forbidden_deployments_fail_only_that_service_and_say_where_to_look(gitl
     report: typing.Final = _collect()
 
     assert [item.project for item in report.services] == ["team/nodeploy", "team/svc"]
-    assert report.services[0].error == (
+    error: typing.Final = report.services[0].error
+    assert error is not None
+    assert (error.code, error.params) == (
+        MessageCode.GITLAB_DENIED,
+        {
+            "project": "team/nodeploy",
+            "resource": "deployments",
+            "features": ["Environments", "CI/CD"],
+            "settings_url": settings,
+            "members_url": f"{ENDPOINT}/team/nodeploy/-/project_members",
+        },
+    )
+    assert error.text == (
         "team/nodeploy: GitLab denied access to deployments (403). Check that:\n"
         f"- Environments are enabled: {settings} → Visibility, project features, permissions → Environments\n"
         f"- CI/CD is enabled: {settings} → Visibility, project features, permissions → CI/CD\n"
@@ -378,7 +395,8 @@ def test_forbidden_resource_lists_the_feature_that_guards_it(
 
     error: typing.Final = _only_service(_collect()).error
 
-    assert error == (
+    assert error is not None
+    assert error.text == (
         f"team/svc: GitLab denied access to {resource} (403). Check that:\n"
         f"- {enabled}: {settings} → Visibility, project features, permissions → {feature}\n"
         f"- the token's user has a role that can read them: {ENDPOINT}/team/svc/-/project_members"
@@ -392,7 +410,9 @@ def test_forbidden_commit_lookup_points_at_merge_requests(gitlab: respx.Router) 
     error: typing.Final = _only_service(_collect()).error
 
     assert error is not None
-    assert error.startswith("team/svc: GitLab denied access to merge requests (403). Check that:\n- Merge requests are")
+    assert error.text.startswith(
+        "team/svc: GitLab denied access to merge requests (403). Check that:\n- Merge requests are"
+    )
 
 
 def test_forbidden_project_stops_the_run(httpx2_mock: respx.Router) -> None:
@@ -406,7 +426,11 @@ def test_forbidden_project_stops_the_run(httpx2_mock: respx.Router) -> None:
 def test_network_failure_names_the_project(gitlab: respx.Router) -> None:
     gitlab["tags"].mock(side_effect=httpcore2.ConnectError("down"))
 
-    assert _only_service(_collect()).error == "team/svc: GitLab request for the repository failed (NetworkError)."
+    assert _only_service(_collect()).error == Message(
+        code=MessageCode.GITLAB_UNREACHABLE,
+        params={"project": "team/svc", "resource": "repository", "reason": "NetworkError"},
+        text="team/svc: GitLab request for the repository failed (NetworkError).",
+    )
 
 
 _LIB_FEATURES: typing.Final = (
@@ -435,7 +459,8 @@ def test_project_without_deployments_is_skipped_with_a_warning(
     report: typing.Final = _collect()
 
     skipped: typing.Final = report.services[0]
-    assert (skipped.project, skipped.rows, skipped.error, skipped.warnings) == ("team/lib", [], None, [warning])
+    assert (skipped.project, skipped.rows, skipped.error) == ("team/lib", [], None)
+    assert [item.text for item in skipped.warnings] == [warning]
     assert len(report.services[1].rows) == 5
 
 
@@ -487,7 +512,13 @@ def test_service_without_production_deployment_lists_the_whole_default_branch(gi
         ("1.2.0", 4, f"{ENDPOINT}/team/svc/-/commits/1.2.0"),
         ("1.1.0", 2, f"{ENDPOINT}/team/svc/-/commits/1.1.0"),
     ]
-    assert service.warnings == ["No successful deployment to 'production'; rows run from the first commit of main."]
+    assert service.warnings == [
+        Message(
+            code=MessageCode.NO_PRODUCTION,
+            params={"environment": "production", "branch": "main"},
+            text="No successful deployment to 'production'; rows run from the first commit of main.",
+        )
+    ]
 
 
 @pytest.mark.httpx2(assert_all_called=False)
@@ -497,7 +528,7 @@ def test_service_without_default_branch_has_no_rows(gitlab: respx.Router) -> Non
     service: typing.Final = _only_service(_collect())
 
     assert service.rows == []
-    assert service.warnings == ["Project has no default branch."]
+    assert service.warnings == [Message(code=MessageCode.NO_DEFAULT_BRANCH, text="Project has no default branch.")]
 
 
 @pytest.mark.httpx2(assert_all_called=False)
@@ -530,7 +561,13 @@ def test_long_range_is_truncated_with_a_warning(gitlab: respx.Router) -> None:
     service: typing.Final = _only_service(_collect(max_commits=2))
 
     assert [row.commits[0].sha for row in service.rows] == ["head", "c3"]
-    assert service.warnings == ["Stopped after 2 commits; older changes are omitted."]
+    assert service.warnings == [
+        Message(
+            code=MessageCode.COMMITS_TRUNCATED,
+            params={"max_commits": 2},
+            text="Stopped after 2 commits; older changes are omitted.",
+        )
+    ]
     assert service.truncated
     assert gitlab["commits"].call_count == 1
 
@@ -540,7 +577,7 @@ def test_range_page_larger_than_the_limit_is_trimmed(gitlab: respx.Router) -> No
     service: typing.Final = _only_service(_collect(max_commits=3))
 
     assert [row.commits[0].sha for row in service.rows] == ["head", "c3", "c2"]
-    assert service.warnings == ["Stopped after 3 commits; older changes are omitted."]
+    assert [item.text for item in service.warnings] == ["Stopped after 3 commits; older changes are omitted."]
     assert gitlab["commits"].call_count == 1
 
 
@@ -550,7 +587,9 @@ def test_long_tag_list_is_truncated_with_a_warning(gitlab: respx.Router) -> None
 
     service: typing.Final = _only_service(_collect())
 
-    assert service.warnings == ["Tag list was truncated; some tags may be missing from rows."]
+    assert service.warnings == [
+        Message(code=MessageCode.TAGS_TRUNCATED, text="Tag list was truncated; some tags may be missing from rows.")
+    ]
     assert gitlab["tags"].call_count == 50
 
 

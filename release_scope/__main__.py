@@ -97,11 +97,11 @@ def _collect_command(  # noqa: PLR0913, PLR0917
     write_site(output, report.model_dump_json(indent=2))
     if cache_path:
         cache.save(cache_path)
-    failed: typing.Final = [service for service in report.services if service.error]
+    failed: typing.Final = [service.error for service in report.services if service.error]
     rows: typing.Final = sum(len(service.rows) for service in report.services)
     typer.echo(f"{len(report.services)} services, {rows} rows, {len(failed)} failed -> {output}", err=True)
-    for service in failed:
-        typer.echo(f"Error: {service.error}", err=True)
+    for error in failed:
+        typer.echo(f"Error: {error.text}", err=True)
     jira_errors: typing.Final = _jira_errors(report)
     for message in jira_errors:
         typer.echo(f"Error: {message}", err=True)
@@ -129,7 +129,7 @@ def _jira_errors(report: Report) -> list[str]:
         return []
     errors: typing.Final = [f"Jira has no issue {key}." for key in report.jira_scope if key in report.jira.missing]
     if report.jira.error:
-        errors.append(report.jira.error)
+        errors.append(report.jira.error.text)
     return errors
 
 

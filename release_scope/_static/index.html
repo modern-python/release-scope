@@ -55,6 +55,7 @@
   .muted { color: var(--muted); }
   .bad { color: var(--bad); }
   .warn { color: var(--warn); }
+  .message { white-space: pre-line; }
   .scroll { overflow-x: auto; }
   .outputs { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px; margin-top: 16px; }
   .outputs .wide { grid-column: 1 / -1; }
@@ -114,8 +115,8 @@
           </li>
         </template>
       </ul>
-      <template x-for="message in problems" :key="message">
-        <p class="bad" x-text="message"></p>
+      <template x-for="item in problems" :key="item.text">
+        <p class="bad message" x-text="message(item)"></p>
       </template>
 
       <h2 x-text="t('services')"></h2>
@@ -142,9 +143,9 @@
                 <span> · <span x-text="item.name"></span> <a :href="item.deployment_url" x-text="item.ref"></a></span>
               </template>
             </p>
-            <p x-show="service.error" class="bad" x-text="service.error"></p>
-            <template x-for="warning in service.warnings" :key="warning">
-              <p class="warn" x-text="warning"></p>
+            <p x-show="service.error" class="bad message" x-text="service.error && message(service.error)"></p>
+            <template x-for="warning in service.warnings" :key="warning.text">
+              <p class="warn message" x-text="message(warning)"></p>
             </template>
             <p x-show="service.release && service.release.pending_merge_requests.length">
               <span x-text="t('notMerged')"></span>
@@ -326,6 +327,7 @@
       noTagYet: "no tag yet",
       upToDate: "up to date",
       rows: { one: "{count} merge request or commit", other: "{count} merge requests or commits" },
+      rowsOf: { one: "{count} merge request or commit", other: "{count} merge requests or commits" },
       taskCount: { one: "{count} task", other: "{count} tasks" },
       shipsOf: "{shipped} of {rows}",
       failedCount: "❌ {count} failed",
@@ -372,27 +374,28 @@
       loadFailed: "Не удалось загрузить отчёт: {error}.",
       title: "Состав релиза",
       titleIssues: "Состав релиза: {keys}",
-      rangeStart: "Собрано {at} UTC. Изменения считаются от коммита на",
-      rangeEnd: "до головы основной ветки.",
+      rangeStart: "Данные собраны {at} UTC. Показаны изменения от коммита на",
+      rangeEnd: "до последнего коммита основной ветки.",
       rangeEndIssues:
-        "до головы основной ветки; строки выше последнего MR или коммита, связанного с задачами, вне скоупа.",
+        "до последнего коммита основной ветки; строки выше последнего MR или коммита, связанного с задачами, вне скоупа.",
       notInJira: "нет в Jira",
       services: "Сервисы",
       servicesIntro:
-        "Откройте сервис и выберите тег для релиза: в него войдут все MR и коммиты от его строки до прода. Выбор хранится в адресе страницы, так что им можно поделиться ссылкой.",
-      ignored: "Из адреса пропущены теги, которых нет в этом отчёте: {picks}.",
+        "Откройте сервис и выберите тег для релиза: в релиз войдут все MR и коммиты от строки этого тега до прода. Выбор хранится в адресе страницы, так что им можно поделиться ссылкой.",
+      ignored: "В адресе есть выбор, которого нет в этом отчёте; он не учтён: {picks}.",
       failedToCollect: "не удалось собрать",
       notInProduction: "нет на проде",
       pickTag: "выберите тег",
       noTagYet: "тега ещё нет",
       upToDate: "всё на проде",
       rows: { one: "{count} MR или коммит", few: "{count} MR или коммита", many: "{count} MR или коммитов" },
+      rowsOf: { one: "{count} MR или коммита", few: "{count} MR или коммитов", many: "{count} MR или коммитов" },
       taskCount: { one: "{count} задача", few: "{count} задачи", many: "{count} задач" },
       shipsOf: "{shipped} из {rows}",
       failedCount: "❌ упало: {count}",
       allowedCount: "упало, но падать разрешено: {count}",
       rangeCut: "диапазон обрезан",
-      rangeCutTitle: "Старые MR и коммиты не собраны; подробности внутри",
+      rangeCutTitle: "Более ранние MR и коммиты не собраны; подробности внутри",
       notMerged: "Не влиты:",
       columnTag: "Тег",
       columnChange: "Изменение",
@@ -406,7 +409,7 @@
       allowedToFail: "(падать разрешено)",
       clearPick: "Сбросить выбор",
       release: "Релиз",
-      noCandidates: "Ни у одного сервиса нет тега между продом и головой основной ветки.",
+      noCandidates: "Ни у одного сервиса нет тега между продом и последним коммитом основной ветки.",
       pickToFill: "Выберите тег в сервисе выше, чтобы заполнить списки.",
       copyFailed: "Кнопка копирования работает только по HTTPS; выделите текст в поле.",
       tasks: "Задачи Jira ({count})",
@@ -422,7 +425,51 @@
       postTasks: "**Задачи Jira ({count})**",
       postNone: "- нет",
       postPipeline: "пайплайн #{id}",
-      legend: "Обозначения: ✅ успешно · ❌ упал · 🔄 выполняется · ⏭ отменён или пропущен · ⚠️ нет пайплайна",
+      legend: "Обозначения: ✅ прошёл · ❌ упал · 🔄 выполняется · ⏭ отменён или пропущен · ⚠️ нет пайплайна",
+    },
+  };
+
+  const PERMISSIONS = "Visibility, project features, permissions";
+  const RESOURCES_DATIVE_RU = {
+    project: "проекту",
+    deployments: "деплоям",
+    pipelines: "пайплайнам",
+    repository: "репозиторию",
+    merge_requests: "MR",
+  };
+  const RESOURCES_ACCUSATIVE_RU = {
+    project: "проект",
+    deployments: "деплои",
+    pipelines: "пайплайны",
+    repository: "репозиторий",
+    merge_requests: "MR",
+  };
+  const resourceDativeRu = (p) => RESOURCES_DATIVE_RU[p.resource] ?? "данным проекта";
+  const resourceAccusativeRu = (p) => RESOURCES_ACCUSATIVE_RU[p.resource] ?? "данные проекта";
+  const jiraTargetRu = (p) => (p.issue ? `при чтении внешних ссылок задачи ${p.issue}` : "при поиске задач");
+  const MESSAGES = {
+    ru: {
+      ci_disabled: (p) =>
+        `В проекте отключён CI/CD, поэтому у него нет пайплайнов и деплоев. Включите CI/CD: ${p.settings_url} → ${PERMISSIONS} → CI/CD.`,
+      environments_disabled: (p) =>
+        `В проекте отключены Environments, поэтому у него нет деплоев. Включите их: ${p.settings_url} → ${PERMISSIONS} → Environments.`,
+      no_default_branch: () => "У проекта нет основной ветки.",
+      no_production: (p) =>
+        `Нет успешного деплоя на «${p.environment}»; строки начинаются с первого коммита ветки ${p.branch}.`,
+      commits_truncated: (p) => `Достигнут лимит коммитов (${p.max_commits}); более старые изменения не показаны.`,
+      tags_truncated: () => "Список тегов обрезан; у некоторых строк теги могут не отображаться.",
+      merged_elsewhere: (p) => `!${p.iid} влит в ${p.target_branch}, а не в ${p.default_branch}.`,
+      gitlab_unreachable: (p) => `${p.project}: не удалось получить ${resourceAccusativeRu(p)} из GitLab (${p.reason}).`,
+      gitlab_status: (p) => `${p.project}: не удалось получить ${resourceAccusativeRu(p)} из GitLab: ответ ${p.status}.`,
+      gitlab_denied: (p) =>
+        [
+          `${p.project}: GitLab отказал в доступе к ${resourceDativeRu(p)} (403). Проверьте, что:`,
+          ...p.features.map((feature) => `- включено «${feature}»: ${p.settings_url} → ${PERMISSIONS} → ${feature}`),
+          `- у владельца токена есть роль с доступом к ${resourceDativeRu(p)}: ${p.members_url}`,
+        ].join("\n"),
+      jira_token_rejected: () => "Jira отклонила токен (401). Проверьте, что он действителен и не истёк.",
+      jira_status: (p) => `Jira вернула ${p.status} ${jiraTargetRu(p)}${p.detail ? `: ${p.detail}.` : "."}`,
+      jira_unreachable: (p) => `Не удалось обратиться к Jira ${jiraTargetRu(p)}: ${p.reason}.`,
     },
   };
 
@@ -478,6 +525,10 @@
           text = text[form] ?? text.many ?? text.other;
         }
         return text.replace(/\{(\w+)\}/g, (match, name) => (name in params ? params[name] : match));
+      },
+      message(item) {
+        const render = MESSAGES[this.lang] && MESSAGES[this.lang][item.code];
+        return render ? render(item.params) : item.text;
       },
       setLang(lang) {
         this.lang = lang;
@@ -605,7 +656,8 @@
         const candidate = this.pickOf(service);
         const rows = this.t("rows", { count: service.rows.length });
         if (candidate) {
-          const shipped = this.t("shipsOf", { shipped: candidate.rows, rows });
+          const of = this.t("rowsOf", { count: service.rows.length });
+          const shipped = this.t("shipsOf", { shipped: candidate.rows, rows: of });
           return `${shipped} · ${this.t("taskCount", { count: candidate.jira_keys.length })}`;
         }
         if (!service.rows.length) return "";

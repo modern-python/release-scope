@@ -49,7 +49,7 @@ def test_collect_writes_report_and_cache(gitlab: respx.Router, tmp_path: pathlib
         "report.json",
     ]
     report: typing.Final = json.loads((output / "report.json").read_text())
-    assert report["schema_version"] == 3
+    assert report["schema_version"] == 4
     assert report["jira"] is None
     assert report["production_environment"] == "production"
     assert [len(item["rows"]) for item in report["services"]] == [5]
@@ -153,7 +153,7 @@ def test_collect_for_jira_issues_writes_a_scoped_report(tmp_path: pathlib.Path) 
     assert report["jira_scope"] == ["SHOP-12"]
     assert [item["project"] for item in report["services"]] == ["team/svc", "team/web", "team/worker"]
     assert json.loads(cache.read_text())["merge_requests"]["1"]["12"]["iid"] == 12
-    assert "Error: team/web: GitLab returned 404" in result.output
+    assert "Error: team/web: GitLab returned 404 for the project." in result.output
 
 
 @pytest.mark.usefixtures("cli_env", "jira_env", "scoped")
