@@ -101,6 +101,7 @@ class _Walk:
     truncated: bool
     drafts: list[RowDraft] = dataclasses.field(default_factory=list)
     tags_by_sha: dict[str, list[str]] = dataclasses.field(default_factory=dict)
+    tag_names: list[str] = dataclasses.field(default_factory=list)
     main_pipelines: dict[str, Pipeline] = dataclasses.field(default_factory=dict)
 
 
@@ -146,7 +147,7 @@ class CollectUseCase:
             collected_at=dt.datetime.now(dt.UTC),
             production_environment=self.settings.production_environment,
             services=services,
-            jira=self._read_issues(self.jira, _row_keys(services)) if self.jira else None,
+            jira=self._read_issues(self.jira, _row_keys(services), exclude) if self.jira else None,
         )
 
     def for_issues(
@@ -155,19 +156,20 @@ class CollectUseCase:
         if self.jira is None:
             msg = "--jira needs RELEASE_SCOPE_JIRA_ENDPOINT and RELEASE_SCOPE_JIRA_TOKEN."
             raise ConfigError(msg)
-        state: typing.Final = self._read_issues(self.jira, keys)
+        state: typing.Final = self._read_issues(self.jira, keys, exclude)
         services: typing.Final[list[Service]] = []
         if state.error is None:
             links_by_project: dict[str, list[LinkedChange]] = {}
             for key in keys:
                 issue = state.issues.get(key)
                 for link in issue.links if issue else []:
-                    if not _excluded(link.project, exclude):
-                        links_by_project.setdefault(link.project, []).append(link)
+                    links_by_project.setdefault(link.project, []).append(link)
             services.extend(
                 self._scoped_service(path, links_by_project[path], cache) for path in sorted(links_by_project)
             )
-            row_state: typing.Final = self._read_issues(self.jira, sorted(set(_row_keys(services)) - set(keys)))
+            row_state: typing.Final = self._read_issues(
+                self.jira, sorted(set(_row_keys(services)) - set(keys)), exclude
+            )
             state.issues.update(row_state.issues)
             state.missing.extend(row_state.missing)
             state.error = row_state.error
@@ -198,7 +200,9 @@ class CollectUseCase:
                 error=explain_failure(project.path_with_namespace, project.web_url, exc),
             )
 
-    def _read_issues(self, jira: JiraApi, keys: collections.abc.Sequence[str]) -> JiraState:
+    def _read_issues(
+        self, jira: JiraApi, keys: collections.abc.Sequence[str], exclude: collections.abc.Sequence[str]
+    ) -> JiraState:
         state: typing.Final = JiraState()
         if not keys:
             return state
@@ -223,16 +227,16 @@ class CollectUseCase:
             )
         try:
             for key, issue in state.issues.items():
-                issue.links = self._linked_changes(jira, key)
+                issue.links = self._linked_changes(jira, key, exclude)
         except JiraError as exc:
             state.error = exc.message
         return state
 
-    def _linked_changes(self, jira: JiraApi, key: str) -> list[LinkedChange]:
+    def _linked_changes(self, jira: JiraApi, key: str, exclude: collections.abc.Sequence[str]) -> list[LinkedChange]:
         changes: typing.Final[dict[str, LinkedChange]] = {}
         for link in jira.remote_links(key):
             change = parse_gitlab_link(link.target.url if link.target else None, self.settings.gitlab.endpoint)
-            if change is not None:
+            if change is not None and not _excluded(change.project, exclude):
                 changes.setdefault(change.url, change)
         return list(changes.values())
 
@@ -298,7 +302,7 @@ class CollectUseCase:
             for draft, is_linked, is_in_scope in zip(drafts, linked, in_scope, strict=True)
         )
         service.candidates.extend(build_candidates(service, production))
-        service.untagged = build_untagged(service, (name for names in walk.tags_by_sha.values() for name in names))
+        service.untagged = build_untagged(service, walk.tag_names)
         return service
 
     def _walk(
@@ -320,8 +324,10 @@ class CollectUseCase:
         tags, tag_list_cut = self.api.list_tags(project.id)
         if tag_list_cut:
             service.warnings.append(tags_truncated())
+            walk.tag_names.extend(tag.name for tag in self.api.list_highest_tags(project.id))
         for tag in tags:
             walk.tags_by_sha.setdefault(tag.commit.id, []).append(tag.name)
+            walk.tag_names.append(tag.name)
         walk.main_pipelines = self._latest_by_sha(
             self.api.list_push_pipelines(project.id, ref=default_branch, updated_after=since)
         )

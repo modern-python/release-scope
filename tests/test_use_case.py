@@ -288,6 +288,14 @@ def test_jira_issues_list_the_gitlab_changes_linked_to_them(jira: respx.Router) 
     assert jira["remote_links:SHOP-12"].call_count == 1
 
 
+@pytest.mark.usefixtures("jira")
+def test_links_to_excluded_projects_are_dropped_from_issues() -> None:
+    state: typing.Final = _collect(with_jira=True, exclude=("team/w*",)).jira
+
+    assert state is not None
+    assert [item.project for item in state.issues["SHOP-12"].links] == ["team/svc"]
+
+
 @pytest.mark.httpx2(assert_all_called=False)
 def test_remote_link_failure_is_reported_and_keeps_the_issues(jira: respx.Router) -> None:
     jira["remote_links:SHOP-12"].respond(404)
@@ -562,14 +570,33 @@ def _tags(gitlab: respx.Router, tags: list[dict[str, typing.Any]]) -> None:
         gitlab.get(f"{SERVICE_API}/pipelines", params={"ref": tag["name"]}).respond(json=[])
 
 
-@pytest.mark.usefixtures("gitlab")
-def test_rows_above_the_newest_tag_link_to_a_new_minor_tag_on_the_head() -> None:
+def test_rows_above_the_newest_tag_link_to_a_new_minor_tag_on_the_head(gitlab: respx.Router) -> None:
     assert _only_service(_collect()).untagged == Untagged(
         rows=1,
         head_sha="head",
         next_tag="1.3.0",
         create_url=f"{ENDPOINT}/team/svc/-/tags/new?tag_name=1.3.0&ref=head",
     )
+    assert all("order_by" not in call.request.url.params for call in gitlab["tags"].calls)
+
+
+def _cut_tags_then_by_version(request: httpx.Request) -> httpx.Response:
+    if request.url.params.get("order_by") == "version":
+        return httpx.Response(
+            200, json=[{"name": "3.0.0", "commit": {"id": "x"}}, {"name": "2.9.0", "commit": {"id": "y"}}]
+        )
+    return httpx.Response(200, json=[{"name": "0.0.1", "commit": {"id": "old"}}], headers={"x-next-page": "2"})
+
+
+@pytest.mark.httpx2(assert_all_called=False)
+def test_cut_tag_list_takes_the_next_tag_from_the_highest_versions(gitlab: respx.Router) -> None:
+    gitlab["tags"].side_effect = _cut_tags_then_by_version
+
+    untagged: typing.Final = _only_service(_collect()).untagged
+
+    assert untagged is not None
+    assert untagged.next_tag == "3.1.0"
+    assert [call.request.url.params.get("sort") for call in gitlab["tags"].calls].count("desc") == 1
 
 
 @pytest.mark.httpx2(assert_all_called=False)
@@ -665,7 +692,7 @@ def test_long_tag_list_is_truncated_with_a_warning(gitlab: respx.Router) -> None
     assert service.warnings == [
         Message(code=MessageCode.TAGS_TRUNCATED, text="Tag list was truncated; some tags may be missing from rows.")
     ]
-    assert gitlab["tags"].call_count == 50
+    assert [call.request.url.params.get("order_by") for call in gitlab["tags"].calls].count(None) == 50
 
 
 def test_commit_without_message_uses_its_title_for_jira_keys(gitlab: respx.Router) -> None:
