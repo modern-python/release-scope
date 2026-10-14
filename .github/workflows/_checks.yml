@@ -57,6 +57,21 @@ jobs:
       - run: uv pip install --no-deps -e .
       - run: uv run --no-sync pytest
 
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: extractions/setup-just@v4
+      - uses: astral-sh/setup-uv@v8.2.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: "**/pyproject.toml"
+      - run: uv python install 3.13
+      - run: uv python pin 3.13
+      - run: just install
+      - run: uv run --no-sync playwright install --with-deps chromium
+      - run: just test-smoke
+
   pytest:
     runs-on: ubuntu-latest
     strategy:
