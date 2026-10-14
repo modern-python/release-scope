@@ -22,7 +22,7 @@ Besides the translation checks in `tests/test_page.py`, it has browser smoke tes
 `smoke` and run by `just test-smoke`, not `just test`; still check a page change in a browser against a report from
 the CLI tests, or against `just demo-serve`. `demo/` holds the made-up scenario behind the published demo page: the
 CLI collects it against respx routes, and `.github/workflows/demo.yml` publishes it to GitHub Pages on each release
-tag. A page change that adds a state belongs in the scenario too. Tests
+tag, with the `screenshot.png` the README shows. A page change that adds a state belongs in the scenario too. Tests
 mock GitLab and Jira only with respx routes (pytest-httpx2): the `gitlab` and `jira` fixtures in `tests/conftest.py`
 declare one named static route per call of the scenario in `tests/payloads.py`. A test changes a response by re-mocking a named route; add no fakes, callbacks,
 or stubs.
@@ -38,6 +38,9 @@ description, and PyPI does not rewrite relative links, so a relative one 404s on
 
 [`skills/release-scope/SKILL.md`](skills/release-scope/SKILL.md) describes the CLI flags, exit codes, and report fields
 for agents, and pins the minor version it describes. Update it, and its version range, in the same change as any of those.
+
+A change to the report schema bumps `SCHEMA_VERSION` and ships in a new minor release; anything else is a patch.
+Move the skill's version range and the README's `release-scope>=X.Y,<X.Z` pins to that minor in the same change.
 
 ## Agent skills
 

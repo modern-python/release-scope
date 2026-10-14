@@ -25,7 +25,7 @@ copy the release post.
 It writes a static page with a `report.json`, built to run on a schedule and publish with GitLab Pages.
 [Try the demo](https://modern-python.github.io/release-scope/): a made-up shop with four services and six Jira issues.
 
-[![The release-scope page with one Jira issue chosen and the tags it needs picked in two services](https://raw.githubusercontent.com/modern-python/release-scope/main/docs/images/demo.png)](https://modern-python.github.io/release-scope/)
+[![The release-scope page with one Jira issue chosen and the tags it needs picked in two services](https://modern-python.github.io/release-scope/screenshot.png)](https://modern-python.github.io/release-scope/)
 
 ## Quickstart
 
