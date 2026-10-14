@@ -105,7 +105,9 @@
   .cell { padding: 0 6px; border-radius: 4px; font-size: 12px; white-space: nowrap; }
   .cell-tag { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
   .cell-untagged { background: color-mix(in srgb, var(--warn) 16%, transparent); color: var(--warn); }
-  .cell-elsewhere { background: color-mix(in srgb, var(--good) 14%, transparent); color: var(--good); }
+  .cell-production, .cell-older { background: color-mix(in srgb, var(--good) 14%, transparent); color: var(--good); }
+  .cell-open, .cell-branch { background: color-mix(in srgb, var(--warn) 16%, transparent); color: var(--warn); }
+  .cell-closed, .cell-elsewhere { background: var(--panel); color: var(--muted); }
   .cell-outside, .cell-failed { background: color-mix(in srgb, var(--bad) 12%, transparent); color: var(--bad); }
   .issue-tools { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0; }
   .issue-tools input { flex: 1; min-width: 140px; font: inherit; padding: 2px 8px; border: 1px solid var(--border); border-radius: 6px;
@@ -205,8 +207,8 @@
                       x-text="service.untagged && service.untagged.next_tag ? t('createTag', { name: service.untagged.next_tag }) : t('createAnyTag')"></a>
                   </span>
                 </template>
-                <template x-if="planOf(service).elsewhere.length && !planOf(service).best && !planOf(service).untagged.length">
-                  <span class="muted" x-text="t('planElsewhere', { keys: planOf(service).elsewhere.join(', ') })"></span>
+                <template x-if="planOf(service).elsewhere.length">
+                  <span class="muted" x-text="outOfRangeText(planOf(service))"></span>
                 </template>
                 <template x-if="missedBy(service).length">
                   <span class="warn" x-text="t('planMissed', { tag: picks[service.project], keys: missedBy(service).join(', ') })"></span>
@@ -535,12 +537,17 @@
       shipsAnywayTitle: "Not chosen, but a picked tag ships it",
       reachUntagged: "no tag yet",
       reachElsewhere: "in prod or not merged",
+      reachProduction: "in prod",
+      reachOlder: "older than the range",
+      reachOpen: "not merged",
+      reachClosed: "closed",
+      reachBranch: "merged into {branch}",
       notInReport: "not in this report",
       linkedTo: "linked to",
       planFor: "for",
       planAlso: "also ships",
       planNoTag: "{keys}: no tag yet.",
-      planElsewhere: "{keys}: in production or not merged, nothing to pick",
+      planElsewhere: "{items}, nothing to pick",
       planMissed: "{tag} does not ship {keys}",
     },
     ru: {
@@ -631,12 +638,17 @@
       shipsAnywayTitle: "Задача не выбрана, но выбранный тег её содержит",
       reachUntagged: "нет тега",
       reachElsewhere: "на проде или не влита",
+      reachProduction: "на проде",
+      reachOlder: "старше диапазона",
+      reachOpen: "не влита",
+      reachClosed: "закрыта",
+      reachBranch: "влита в {branch}",
       notInReport: "нет в этом отчёте",
       linkedTo: "связан с",
       planFor: "для",
       planAlso: "также войдут",
       planNoTag: "{keys}: тега ещё нет.",
-      planElsewhere: "{keys}: уже на проде или не влиты, выбирать нечего",
+      planElsewhere: "{items}, выбирать нечего",
       planMissed: "{tag} не содержит {keys}",
     },
   };
@@ -703,6 +715,19 @@
 
   const byKey = (a, b) => a.localeCompare(b, undefined, { numeric: true });
 
+  const OUT_OF_RANGE = new Set(["production", "older", "open", "branch", "closed", "elsewhere"]);
+
+  const outOfRange = (service, links) => {
+    if (links.some((link) => link.state === "opened" || link.state === "locked")) return { state: "open" };
+    if (links.some((link) => link.state === "merged" && link.target_branch === service.default_branch)) {
+      return { state: service.truncated ? "older" : "production" };
+    }
+    const merged = links.find((link) => link.state === "merged");
+    if (merged) return { state: "branch", branch: merged.target_branch };
+    if (links.some((link) => link.state === "closed")) return { state: "closed" };
+    return { state: "elsewhere" };
+  };
+
   const reachOf = (report) => {
     const issues = report.jira ? report.jira.issues : {};
     const reach = Object.fromEntries(Object.keys(issues).map((key) => [key, []]));
@@ -726,7 +751,7 @@
           continue;
         }
         if (!indexes.length) {
-          if (links.length) reach[key].push({ project, state: "elsewhere" });
+          if (links.length) reach[key].push({ project, ...outOfRange(service, links) });
           continue;
         }
         const index = Math.min(...indexes);
@@ -916,7 +941,7 @@
             entry.keys.push(key);
             if (item.state === "tag" && (!entry.best || item.tagIndex < entry.best.tagIndex)) entry.best = item;
             if (item.state === "untagged") entry.untagged.push(key);
-            if (item.state === "elsewhere") entry.elsewhere.push(key);
+            if (OUT_OF_RANGE.has(item.state)) entry.elsewhere.push({ key, ...item });
           }
         }
         return plan;
@@ -941,10 +966,27 @@
       shipsAnyway(key) {
         return !this.chosen.includes(key) && this.picked.some(({ candidate }) => candidate.jira_keys.some((item) => item.key === key));
       },
+      reachLabel(item) {
+        if (item.state === "tag") return item.tag;
+        if (item.state === "branch") return this.t("reachBranch", { branch: item.branch });
+        const states = {
+          untagged: "reachUntagged",
+          production: "reachProduction",
+          older: "reachOlder",
+          open: "reachOpen",
+          closed: "reachClosed",
+          elsewhere: "reachElsewhere",
+          outside: "notInReport",
+          failed: "failedToCollect",
+        };
+        return this.t(states[item.state]);
+      },
+      outOfRangeText(entry) {
+        const items = entry.elsewhere.map((item) => `${item.key} ${this.reachLabel(item)}`).join(", ");
+        return entry.best || entry.untagged.length ? items : this.t("planElsewhere", { items });
+      },
       reachText(item) {
-        const name = item.project.split("/").pop();
-        const states = { untagged: "reachUntagged", elsewhere: "reachElsewhere", outside: "notInReport", failed: "failedToCollect" };
-        return `${name} ${item.state === "tag" ? item.tag : this.t(states[item.state])}`;
+        return `${item.project.split("/").pop()} ${this.reachLabel(item)}`;
       },
       showIssues(view) {
         this.issueView = view;

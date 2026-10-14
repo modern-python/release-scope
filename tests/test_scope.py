@@ -226,6 +226,23 @@ def test_missing_scope_issue_yields_no_services(scoped: respx.Router) -> None:
 
 
 @pytest.mark.httpx2(assert_all_called=False)
+def test_scope_links_record_merge_request_states_without_reading_them_twice(scoped: respx.Router) -> None:
+    scoped["remote_links:SHOP-12"].respond(
+        json=_links(f"{ENDPOINT}/team/svc/-/merge_requests/12", f"{ENDPOINT}/team/svc/-/merge_requests/13")
+    )
+    scoped.get(f"{SERVICE_API}/merge_requests/13", name="mr:13").respond(json=merge_request(13, "WIP", state="opened"))
+
+    report: typing.Final = _scope()
+
+    assert report.jira is not None
+    assert [(item.iid, item.state, item.target_branch) for item in report.jira.issues["SHOP-12"].links] == [
+        (12, "merged", "main"),
+        (13, "opened", "main"),
+    ]
+    assert (scoped["mr:12"].call_count, scoped["mr:13"].call_count) == (1, 1)
+
+
+@pytest.mark.httpx2(assert_all_called=False)
 def test_scope_stops_when_jira_fails(scoped: respx.Router) -> None:
     scoped["jira_search"].respond(401)
 

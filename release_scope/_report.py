@@ -5,7 +5,7 @@ import typing
 import pydantic
 
 
-SCHEMA_VERSION: typing.Final = 6
+SCHEMA_VERSION: typing.Final = 7
 
 
 class MessageCode(enum.StrEnum):
@@ -140,6 +140,8 @@ class LinkedChange(pydantic.BaseModel):
     url: str
     iid: int | None = None
     sha: str | None = None
+    state: str | None = None
+    target_branch: str | None = None
 
 
 class JiraIssue(pydantic.BaseModel):
@@ -159,7 +161,7 @@ class JiraState(pydantic.BaseModel):
 
 
 class Report(pydantic.BaseModel):
-    schema_version: typing.Literal[6] = SCHEMA_VERSION
+    schema_version: typing.Literal[7] = SCHEMA_VERSION
     collected_at: dt.datetime
     production_environment: str
     services: list[Service]
