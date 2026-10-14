@@ -129,14 +129,16 @@ as one line: what production runs, the picked tag, how many merge requests or co
 failed jobs of the picked tag, or of the newest tag before a pick, with the ones allowed to fail counted apart, a mark
 when the range was cut at `RELEASE_SCOPE_MAX_COMMITS`, and how many rows have no tag yet, with a `+` when the cut
 range holds no tag, so more untagged rows may lie below it. The failed jobs are those of the tag's pipeline and of
-the main pipeline of its commit; failures in other rows show only when the line is opened.
+the main pipeline of its commit; failures in other rows show only when the line is opened. A service whose
+production runs the head of the default branch, with no rows left to ship, is marked green as fully deployed.
 Opening a line shows the service's environments with when each was deployed, warnings, a link to create the next tag
 on the head when rows have no tag yet, merge requests that are not merged yet, and its rows with tags and their
 pipelines, merge requests or commits with when they were merged or committed, Jira keys with their status,
 environments with the time each first ran the row, and failed jobs; rows out of scope are dimmed.
 Links, including the GitLab settings pages that warnings and errors point to, open in a new
-tab. Each tag has a **pick** button: picking it highlights the rows it ships and closes the line again. A `--jira`
-report starts with each service's release tag picked. Services with neither a production deployment nor rows are left
+tab. Each tag has a **pick** button: picking it highlights the rows it ships and closes the line again, which then
+shows the picked tag as a blue chip. The chip's `×` clears the pick without opening the line. A `--jira` report starts
+with each service's release tag picked. Services with neither a production deployment nor rows are left
 out of the page.
 
 The address keeps the picks after `#`, as `team/api=2.4.0&team/web=5.12.0`, so sharing or reloading the page keeps
@@ -144,8 +146,10 @@ them. An address with picks replaces the release tags of a `--jira` report; pick
 a tag that a later run no longer lists, are skipped with a warning. Clearing every pick empties the address, so a
 reload starts from the release tags again.
 
-**Release** at the bottom turns the picked tags into three lists and a release post, each with a copy button and a
-text box to copy from by hand, since browsers allow the copy button only over HTTPS:
+**Release**, in a column next to the services that stays in view while they scroll, or below them on a narrow screen,
+turns the picked tags into three lists and a release post. While a service is open, the column folds into a strip
+with the number of picked tags and tasks, so the rows get the full width; clicking the strip closes the service. Each has a tab of its own, with a copy button and a text box
+to copy from by hand, since browsers allow the copy button only over HTTPS:
 
 - **Jira tasks**: the keys of every in-scope row from each picked tag down to production, without duplicates, with
   summary and a status badge: grey to do, blue in progress, green done. Copy them one per line or as a JQL
