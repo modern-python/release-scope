@@ -116,6 +116,22 @@ def test_release_tag_is_the_nearest_tag_above_an_untagged_target(scoped: respx.R
 
 
 @pytest.mark.httpx2(assert_all_called=False)
+def test_release_tag_ships_the_scope_issue_its_target_does_not_name(scoped: respx.Router) -> None:
+    scoped["remote_links:SHOP-12"].respond(json=_links(f"{ENDPOINT}/team/svc/-/merge_requests/11"))
+    scoped.get(f"{SERVICE_API}/merge_requests/11").respond(
+        json=merge_request(11, "Bump UTF-8 handling", merge_commit_sha="c2", sha="x11")
+    )
+
+    service: typing.Final = _service(_scope())
+
+    assert [[key.key for key in row.jira_keys] for row in service.rows][1:3] == [["SHOP-12", "SHOP-13"], ["SHOP-12"]]
+    assert [(item.tag.name, [key.key for key in item.jira_keys]) for item in service.candidates] == [
+        ("1.2.0", ["SHOP-12"]),
+        ("1.1.0", []),
+    ]
+
+
+@pytest.mark.httpx2(assert_all_called=False)
 def test_release_has_no_tag_when_none_is_at_or_above_the_target(scoped: respx.Router) -> None:
     scoped["tags"].respond(json=[{"name": "1.1.0", "commit": {"id": "c1"}}])
 

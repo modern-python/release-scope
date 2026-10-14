@@ -97,6 +97,12 @@ def _row_keys(services: list[Service]) -> list[str]:
     return sorted({key.key for service in services for row in service.rows if row.in_scope for key in row.jira_keys})
 
 
+def _holds(row: Row, link: LinkedChange) -> bool:
+    if link.iid is not None:
+        return any(item.iid == link.iid for item in row.merge_requests)
+    return link.sha is not None and any(commit.sha.startswith(link.sha) for commit in row.commits)
+
+
 @dataclasses.dataclass(slots=True, kw_only=True)
 class _Walk:
     truncated: bool
@@ -145,11 +151,14 @@ class CollectUseCase:
             for project in resolved
             if not _excluded(project.path_with_namespace, exclude)
         ]
+        state: typing.Final = self._read_issues(self.jira, _row_keys(services), exclude) if self.jira else None
+        if state is not None:
+            self._join_linked_issues(services, state)
         return Report(
             collected_at=dt.datetime.now(dt.UTC),
             production_environment=self.settings.production_environment,
             services=services,
-            jira=self._read_issues(self.jira, _row_keys(services), exclude) if self.jira else None,
+            jira=state,
         )
 
     def for_issues(
@@ -175,6 +184,7 @@ class CollectUseCase:
             state.issues.update(row_state.issues)
             state.missing.extend(row_state.missing)
             state.error = row_state.error
+            self._join_linked_issues(services, state)
         return Report(
             collected_at=dt.datetime.now(dt.UTC),
             production_environment=self.settings.production_environment,
@@ -201,6 +211,27 @@ class CollectUseCase:
                 project_url=project.web_url,
                 error=explain_failure(project.path_with_namespace, project.web_url, exc),
             )
+
+    def _join_linked_issues(self, services: list[Service], state: JiraState) -> None:
+        for service in services:
+            links = [
+                (key, link)
+                for key, issue in state.issues.items()
+                for link in issue.links
+                if link.project == service.project
+            ]
+            if not links:
+                continue
+            for row in service.rows:
+                named = {item.key for item in row.jira_keys}
+                for key, link in links:
+                    if key not in named and _holds(row, link):
+                        row.jira_keys.append(JiraKeyRef(key=key, url=self._jira_url(key)))
+                        named.add(key)
+            production = next(
+                (item for item in service.environments if item.name == self.settings.production_environment), None
+            )
+            service.candidates = build_candidates(service, production)
 
     def _read_issues(
         self, jira: JiraApi, keys: collections.abc.Sequence[str], exclude: collections.abc.Sequence[str]

@@ -82,7 +82,8 @@ Read `$out/site/report.json` and answer the user's question from it, briefly.
   `code` and `params` carry the same facts in structured form.
 - A row is one merged merge request or a direct commit: `merge_requests`, `commits`, `tags` pointing into it,
   `environments` running exactly its commit now, `first_deployed_at` (per environment other than production, when the
-  first deploy job that shipped this row or a newer one finished), `jira_keys`, and `main_pipeline` with
+  first deploy job that shipped this row or a newer one finished), `jira_keys` (the keys its merge request or commit
+  text names, plus, with Jira, every issue whose GitLab links point into the row), and `main_pipeline` with
   `failed_jobs`. Tag pipelines carry their own `failed_jobs`.
 - A service with no rows is up to date with production.
 - A service never deployed to production has a `no_production` warning; its rows run down to the first commit of the

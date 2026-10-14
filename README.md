@@ -28,7 +28,9 @@ also has its first deployment to each environment other than production: when th
 row, or a newer row, finished. With a Jira token, it also reads the summary and status of every key in one batched search,
 and the GitLab merge requests and commits linked to each issue. GitLab's Jira integration adds those links to the
 issue's Web links whenever a commit or MR mentions it; a link counts only if it starts with
-`RELEASE_SCOPE_GITLAB__ENDPOINT`. The projects they point to are the issue's related services.
+`RELEASE_SCOPE_GITLAB__ENDPOINT`. The projects they point to are the issue's related services. An issue also joins
+the Jira keys of every row its links point to, so a key that only a commit message inside a merge request names
+still counts for that row and for the tags that ship it.
 
 ## Quickstart
 
