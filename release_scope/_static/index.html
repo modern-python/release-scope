@@ -74,6 +74,9 @@
   .service[open] > summary { border-bottom: 1px solid var(--border); }
   .service.deployed { border-left: 4px solid var(--good); background: color-mix(in srgb, var(--good) 6%, transparent); }
   .service.deployed .name { color: var(--good); }
+  .service.chosen { border-left: 4px solid var(--accent); background: color-mix(in srgb, var(--accent) 6%, transparent); }
+  .service.chosen .name { color: var(--accent); }
+  button.unpick { padding: 0 6px; margin-left: 2px; line-height: 1.2; }
   .service > summary::before { content: "▸"; color: var(--muted); }
   .service[open] > summary::before { content: "▾"; }
   .service .name { min-width: 200px; font-weight: 600; }
@@ -132,13 +135,14 @@
       <p x-show="pickable.length" class="muted" x-text="t('servicesIntro')"></p>
       <p x-show="ignored.length" class="warn" x-text="t('ignored', { picks: ignored.join(', ') })"></p>
       <template x-for="service in listed" :key="service.project">
-        <details class="service" :class="{ deployed: deployed(service) }" name="services">
+        <details class="service" :class="{ deployed: deployed(service), chosen: pickOf(service) }" name="services">
           <summary>
             <span class="name" x-text="service.project"></span>
             <span x-show="service.error" class="bad" x-text="t('failedToCollect')"></span>
             <span x-show="!service.error">
               <span class="muted" x-text="productionRef(service) + ' →'"></span>
-              <span x-show="pickOf(service)" class="picked-tag" x-text="picks[service.project]"></span>
+              <span x-show="pickOf(service)" class="picked-tag"><span x-text="picks[service.project]"></span><button type="button" class="unpick"
+                :title="t('clearPick')" :aria-label="t('clearPick')" @click.prevent="pick(service, '', $el)">×</button></span>
               <span x-show="!pickOf(service)" class="muted" x-text="pickHint(service)"></span>
               <span x-show="deployed(service)" class="status status-done" x-text="t('upToDate')"></span>
               <span x-show="service.untagged" class="warn" x-text="untaggedText(service, 'untagged', 'untaggedAtLeast')"></span>

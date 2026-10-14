@@ -136,7 +136,8 @@ on the head when rows have no tag yet, merge requests that are not merged yet, a
 pipelines, merge requests or commits with when they were merged or committed, Jira keys with their status,
 environments with the time each first ran the row, and failed jobs; rows out of scope are dimmed.
 Links, including the GitLab settings pages that warnings and errors point to, open in a new
-tab. Each tag has a **pick** button: picking it highlights the rows it ships and closes the line again. A `--jira`
+tab. Each tag has a **pick** button: picking it highlights the rows it ships, marks the service's line blue, and
+closes the line again. The `×` next to the picked tag on the line clears the pick without opening it. A `--jira`
 report starts with each service's release tag picked. Services with neither a production deployment nor rows are left
 out of the page.
 
