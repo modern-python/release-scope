@@ -32,6 +32,9 @@ issue's Web links whenever a commit or MR mentions it; a link counts only if it 
 the Jira keys of every row its links point to, so a key that only a commit message inside a merge request names
 still counts for that row and for the tags that ship it.
 
+The [demo page](https://modern-python.github.io/release-scope/) is that site for a made-up shop with four
+services and six Jira issues. Choose an issue to see which tags it needs. Its GitLab and Jira links lead nowhere.
+
 ## Quickstart
 
 ```sh

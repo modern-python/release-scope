@@ -43,6 +43,14 @@ test-smoke *args:
     uv run --no-sync playwright install chromium
     uv run --no-sync pytest -m smoke {{ args }}
 
+# Build the demo site into site/: the real CLI collects the made-up scenario in demo/scenario.py.
+demo:
+    uv run --no-sync python -m demo.build site
+
+# Build the demo and serve it at http://127.0.0.1:8000.
+demo-serve: demo
+    uv run --no-sync python -m http.server 8000 --bind 127.0.0.1 --directory site
+
 # Branch-coverage run (diagnostic; line coverage is the enforced gate, not branch).
 test-branch:
     uv run --no-sync pytest --cov=release_scope --cov-branch

@@ -20,7 +20,9 @@ turns the range plus merge requests into rows; `_candidates.py` is pure and turn
 release could ship. `_static/` is the site `collect` copies next to `report.json`: `index.html` with vendored Alpine.js.
 Besides the translation checks in `tests/test_page.py`, it has browser smoke tests in `tests/test_browser.py`, marked
 `smoke` and run by `just test-smoke`, not `just test`; still check a page change in a browser against a report from
-the CLI tests. Tests
+the CLI tests, or against `just demo-serve`. `demo/` holds the made-up scenario behind the published demo page: the
+CLI collects it against respx routes, and `.github/workflows/demo.yml` publishes it to GitHub Pages on each release
+tag. A page change that adds a state belongs in the scenario too. Tests
 mock GitLab and Jira only with respx routes (pytest-httpx2): the `gitlab` and `jira` fixtures in `tests/conftest.py`
 declare one named static route per call of the scenario in `tests/payloads.py`. A test changes a response by re-mocking a named route; add no fakes, callbacks,
 or stubs.
