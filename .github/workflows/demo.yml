@@ -1,7 +1,8 @@
 name: Demo
 
 # Publishes the demo page to GitHub Pages: the CLI collects the made-up scenario in
-# demo/scenario.py, so the page and its report.json match the released code.
+# demo/scenario.py, so the page and its report.json match the released code. The
+# screenshot.png it publishes is the image the README shows.
 on:
   push:
     tags:
@@ -22,7 +23,8 @@ jobs:
       - run: uv python install 3.13
       - run: uv python pin 3.13
       - run: just install
-      - run: just demo
+      - run: uv run --no-sync playwright install --with-deps chromium
+      - run: just demo-screenshot
       - uses: actions/upload-pages-artifact@v5
         with:
           path: site/

@@ -1,9 +1,6 @@
 import collections.abc
-import functools
-import http.server
 import pathlib
 import re
-import threading
 import typing
 
 import pytest
@@ -12,17 +9,14 @@ from playwright.sync_api import ConsoleMessage, Error, Locator, Page, expect
 from typer.testing import CliRunner
 
 from demo.build import build
+from demo.screenshot import capture
+from demo.server import serve
 from release_scope import ioc
 from release_scope.__main__ import MAIN_APP
 from tests.payloads import ENDPOINT, JIRA_ENDPOINT
 
 
 pytestmark = pytest.mark.smoke
-
-
-class _QuietHandler(http.server.SimpleHTTPRequestHandler):
-    def log_message(self, format: str, *args: typing.Any) -> None:  # noqa: A002, ANN401
-        pass
 
 
 @pytest.fixture
@@ -37,25 +31,16 @@ def site(jira: respx.Router, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.
         result = CliRunner().invoke(MAIN_APP, ["collect", "-g", "team", "-o", str(output)])
     assert result.exit_code == 0, result.output
     assert jira["jira_search"].called
-    yield from _serve(output)
+    with serve(output) as url:
+        yield url
 
 
 @pytest.fixture
 def demo_site(tmp_path: pathlib.Path) -> collections.abc.Iterator[str]:
     output: typing.Final = tmp_path / "demo"
     build(output)
-    yield from _serve(output)
-
-
-def _serve(directory: pathlib.Path) -> collections.abc.Iterator[str]:
-    server: typing.Final = http.server.ThreadingHTTPServer(
-        ("127.0.0.1", 0), functools.partial(_QuietHandler, directory=str(directory))
-    )
-    thread: typing.Final = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    yield f"http://127.0.0.1:{server.server_port}/"
-    server.shutdown()
-    server.server_close()
+    with serve(output) as url:
+        yield url
 
 
 @pytest.fixture
@@ -133,4 +118,16 @@ def test_demo_lists_its_services_and_picks_tags_for_an_issue(page: Page, demo_si
     expect(page.locator(".issue-row code")).to_have_count(6)
     _issue(page, "SHOP-38").check()
     expect(page).to_have_url(re.compile(r"#issues=SHOP-38&shop/api=2\.5\.0&shop/web=1\.9\.0$"))
+    assert errors == []
+
+
+def test_demo_screenshot_shows_an_issue_with_its_picks(
+    page: Page, demo_site: str, errors: list[str], tmp_path: pathlib.Path
+) -> None:
+    output: typing.Final = tmp_path / "screenshot.png"
+
+    capture(page, demo_site, output)
+
+    assert output.read_bytes().startswith(b"\x89PNG")
+    expect(page.locator("details.service .chip:visible > span")).to_have_text(["2.5.0", "1.9.0"])
     assert errors == []

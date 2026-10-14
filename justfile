@@ -47,6 +47,11 @@ test-smoke *args:
 demo:
     uv run --no-sync python -m demo.build site
 
+# Build the demo and save site/screenshot.png, the image the README shows; installs Chromium on first run.
+demo-screenshot: demo
+    uv run --no-sync playwright install chromium
+    uv run --no-sync python -m demo.screenshot site
+
 # Build the demo and serve it at http://127.0.0.1:8000.
 demo-serve: demo
     uv run --no-sync python -m http.server 8000 --bind 127.0.0.1 --directory site
