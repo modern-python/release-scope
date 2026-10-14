@@ -34,6 +34,7 @@ from tests.payloads import (
     jira_page,
     pipeline,
     project,
+    remote_link,
 )
 
 
@@ -336,6 +337,36 @@ def test_jira_issues_list_the_gitlab_changes_linked_to_them(jira: respx.Router) 
         ("commit", "team/worker", f"{ENDPOINT}/team/worker", None, "abc1234def"),
     ]
     assert jira["remote_links:SHOP-12"].call_count == 1
+
+
+def test_issue_linked_to_a_merge_request_joins_its_row_and_the_candidates_shipping_it(jira: respx.Router) -> None:
+    jira["remote_links:SHOP-9"].respond(json=[remote_link(f"{ENDPOINT}/team/svc/-/merge_requests/11")])
+
+    service: typing.Final = _only_service(_collect(with_jira=True))
+
+    assert [[key.key for key in row.jira_keys] for row in service.rows] == [
+        ["SHOP-9"],
+        ["SHOP-12", "SHOP-13"],
+        ["SHOP-9"],
+        [],
+        [],
+    ]
+    assert service.rows[2].jira_keys[0].url == "https://jira.example.test/browse/SHOP-9"
+    assert [(item.tag.name, [key.key for key in item.jira_keys]) for item in service.candidates] == [
+        ("1.2.0", ["SHOP-12", "SHOP-13", "SHOP-9"]),
+        ("1.1.0", []),
+    ]
+
+
+@pytest.mark.httpx2(assert_all_called=False)
+def test_issue_linked_to_a_commit_joins_the_row_holding_it(jira: respx.Router) -> None:
+    jira["commits"].respond(json=[commit("abcdef1234", "Hotfix", date="2026-09-25T00:00:00Z"), *COMMITS[1:]])
+    jira.get(f"{SERVICE_API}/repository/commits/abcdef1234/merge_requests").respond(json=[])
+    jira["remote_links:SHOP-12"].respond(json=[remote_link(f"{ENDPOINT}/team/svc/-/commit/abcdef1")])
+
+    rows: typing.Final = _only_service(_collect(with_jira=True)).rows
+
+    assert [key.key for key in rows[0].jira_keys] == ["SHOP-12"]
 
 
 @pytest.mark.usefixtures("jira")
