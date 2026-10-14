@@ -17,23 +17,15 @@
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 [![ty](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ty/main/assets/badge/v0.json)](https://github.com/astral-sh/ty)
 
-`release-scope` collects what sits between production and the default branch across GitLab services: tags, MRs,
-Jira issues, failed jobs.
+`release-scope` shows what each of your GitLab services would ship if you released it now. For every service it
+lists the merge requests and commits between production and the default branch, the tags you could release, their
+pipelines, and the Jira issues they carry. Pick a tag per service, or tick Jira issues and let it pick the tags, then
+copy the release post.
 
-For every service it reads the latest successful production deployment, walks the default branch down to that
-commit, or down to its first commit when the service was never deployed to production, and writes a static site with
-one JSON report: a row per merge request or direct commit, newest first. A row has the tags that point into it, the
-environments running it, the Jira keys its MR mentions, and the failed jobs of its main-branch and tag pipelines. It
-also has its first deployment to each environment other than production: when the first deploy job that shipped the
-row, or a newer row, finished. With a Jira token, it also reads the summary and status of every key in one batched search,
-and the GitLab merge requests and commits linked to each issue. GitLab's Jira integration adds those links to the
-issue's Web links whenever a commit or MR mentions it; a link counts only if it starts with
-`RELEASE_SCOPE_GITLAB__ENDPOINT`. The projects they point to are the issue's related services. An issue also joins
-the Jira keys of every row its links point to, so a key that only a commit message inside a merge request names
-still counts for that row and for the tags that ship it.
+It writes a static page with a `report.json`, built to run on a schedule and publish with GitLab Pages.
+[Try the demo](https://modern-python.github.io/release-scope/): a made-up shop with four services and six Jira issues.
 
-The [demo page](https://modern-python.github.io/release-scope/) is that site for a made-up shop with four
-services and six Jira issues. Choose an issue to see which tags it needs. Its GitLab and Jira links lead nowhere.
+[![The release-scope page with one Jira issue chosen and the tags it needs picked in two services](https://raw.githubusercontent.com/modern-python/release-scope/main/docs/images/demo.png)](https://modern-python.github.io/release-scope/)
 
 ## Quickstart
 
@@ -44,35 +36,69 @@ export RELEASE_SCOPE_ENVIRONMENTS='["prod", "preview"]'
 export RELEASE_SCOPE_PRODUCTION_ENVIRONMENT=prod
 
 uvx release-scope collect --group team/backend --output public --cache cache.json
+python3 -m http.server --directory public
 ```
 
-`--output` is a directory: `collect` writes `report.json` there, next to the page that shows it (see Site).
-`--group` and `--project` are repeatable and can be mixed. `--exclude` (`-x`) skips every project whose path
-matches a glob like `team/*-sandbox`. It is repeatable, `*` also matches `/`, and a skipped project is left out of
-the report without being queried, including from the GitLab links of Jira issues. The command exits `1` when any
-service failed to collect; the report is still written and names the error on that service. A service GitLab denies
-access to fails alone, and its error lists the project settings and member page to check. A project with CI/CD or Environments
-disabled is reported with a warning and no rows, without querying it. Only a rejected token, or a group or project
-passed on the command line that the token cannot see, stops the run. A failed Jira search is recorded in the report
-and also exits `1`; the GitLab part is still written.
+Then open http://localhost:8000. The page reads `report.json` over HTTP, so a `file://` URL will not work.
 
-## Jira issues
+- `--group` and `--project` are repeatable and can be mixed. `--include-subgroups` adds the projects of subgroups.
+- `--exclude` (`-x`) skips every project whose path matches a glob like `team/*-sandbox`. It is repeatable, and `*`
+  also matches `/`. A skipped project is never queried, including when a Jira issue links to it.
+- `--cache` saves requests between runs; see [Cache](#cache).
 
-`--jira` scopes the report to Jira issues instead of groups or projects, and needs the Jira settings:
+## Publish with GitLab Pages
+
+Run `collect` from a scheduled pipeline in a project of its own, such as `team/release-report`. Pages serves only the
+site of the project that runs the job, and that project's members are the ones who can view it. `collect` reads the
+services through the API, so they need no change.
+
+```yaml
+release-report:
+  image: ghcr.io/astral-sh/uv:python3.13-trixie-slim
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+  script:
+    - uvx --from 'release-scope>=0.9,<0.10' release-scope collect --group team/backend --output public || [ $? -eq 1 ]
+  pages: true
+```
+
+`|| [ $? -eq 1 ]` keeps the job green when only some services failed, since GitLab deploys Pages only from a
+successful job, and the page shows their errors. Any other failure still fails the job and keeps the previous site.
+`pages: true` needs GitLab 17.6 and publishes `public` from 17.10. On older versions, name the job `pages` and add
+`artifacts: {paths: [public]}`.
+
+Set `RELEASE_SCOPE_GITLAB__ENDPOINT`, a masked `RELEASE_SCOPE_GITLAB__TOKEN`, and the other settings as CI/CD
+variables of the project, then add a pipeline schedule.
+
+A Pages site is public to anyone who can reach it, even for a private project, unless an administrator of a
+self-managed instance turns on [Pages access control](https://docs.gitlab.com/administration/pages/#access-control).
+With it on, set **Settings > General > Visibility > Pages** to *Only project members*.
+
+## Choosing a release
+
+Open a service and press **pick** on the tag to release. It ships every row from that tag down to production. Or
+tick Jira issues in the **Issues** list, and the page picks, in every service they touch, the nearest tag that ships
+them, and marks other issues those tags ship anyway. The address keeps the picks, so a link shares them.
+
+The **Release** column turns the picks into the Jira task list, the tag pipelines, compare links, and a Markdown
+release post to copy. [The page](https://github.com/modern-python/release-scope/blob/main/docs/page.md) describes
+every label and rule.
+
+## Jira
+
+Set `RELEASE_SCOPE_JIRA_ENDPOINT` and `RELEASE_SCOPE_JIRA_TOKEN` to add Jira. `collect` then reads the summary and
+status of every key the rows mention, and the GitLab merge requests and commits linked to each issue through GitLab's
+Jira integration.
+
+`--jira` collects only the services some Jira issues link to, instead of a group or project:
 
 ```sh
 uvx release-scope collect --jira SHOP-140 --jira SHOP-141 --output public --cache cache.json
 ```
 
-It reads the issues and their GitLab links, then collects every project they link to. In each project the rows from
-the production baseline up to the latest linked change are in scope: they show everything that ships with the issues.
-Rows above that change are kept with `in_scope: false`, so their tags can still be picked, but their Jira keys are
-neither looked up nor counted as tasks of a release. The service
-records the release state: `pending` with the nearest tag at or above that change (or none, when a new tag is
-needed), `in_production` when every linked merge request is already deployed, `not_merged` when only open merge
-requests link to it, or `not_found`. Open merge requests and merges into other branches are listed either way.
-`--exclude` drops linked projects the same way.
-`--jira` is repeatable and cannot be combined with `--group` or `--project`; an issue Jira does not return exits `1`.
+The report then starts with each service's release tag picked: the nearest tag at or above the issues' latest
+change. `--jira` is repeatable and cannot be combined with `--group` or `--project`.
+[How collection works](https://github.com/modern-python/release-scope/blob/main/docs/how-it-works.md) has the details.
 
 ## Configuration
 
@@ -90,151 +116,48 @@ Every setting is an environment variable; nothing about a GitLab or Jira instanc
 | `RELEASE_SCOPE_MAX_COMMITS` | `1000` | Stop walking a service's range after this many commits |
 | `RELEASE_SCOPE_REQUEST_TIMEOUT` | `10` | Per-request timeout in seconds |
 
-## Report
+## Failures and exit codes
 
-The report is versioned by `schema_version`; the models live in
-[`release_scope/_report.py`](https://github.com/modern-python/release-scope/blob/main/release_scope/_report.py).
-Top-level `jira` is `null` without a Jira token; otherwise it holds `issues` by key (summary, status, status category,
-issue type, linked GitLab changes), the `missing` keys Jira did not return, and an `error` if a Jira request failed.
-A linked merge request in a collected service has its `state` (`opened`, `closed`, `locked`, or `merged`) and
-`target_branch`. When a row holds it, it is merged into the default branch and costs no request; otherwise it is read
-from GitLab, and a merged one is cached. The state stays `null` for a commit, for a project outside the report, and when
-the merge request cannot be read.
-Warnings and errors, on services and in `jira`, are messages: a `code`, its `params`, and the English `text`.
-Each service lists its `candidates`: the tags a release could ship, newest first, each with its pipeline, the number of
-rows it ships, the in-scope Jira keys of those rows, and the compare link from production, or the tag's commit history
-when the service has no production deployment. When rows sit above the newest tag, `untagged` counts them and gives
-the head commit, the next tag (the highest `X.Y.Z` tag with its minor version bumped, or `null` when no tag has that
-form), and `create_url`, GitLab's new-tag form filled in with both. When the tag list was cut short, the next tag
-comes from one more request for the highest versions. One row, trimmed:
+One service failing does not stop the run. A service GitLab denies access to fails alone, and its error names the
+project settings and member page to check. A project with CI/CD or Environments disabled gets a warning and no rows,
+without being queried.
 
-```json
-{
-  "kind": "merge_request",
-  "tags": [{"name": "1.2.0", "url": "...", "pipeline": {"id": 201, "status": "success", "failed_jobs": []}}],
-  "merge_requests": [{"iid": 12, "title": "SHOP-12 new endpoint", "url": "..."}],
-  "commits": [{"sha": "c3...", "title": "Merge branch 'feature/SHOP-12'"}],
-  "jira_keys": [{"key": "SHOP-12", "url": "https://jira.example.com/browse/SHOP-12"}],
-  "environments": ["preview"],
-  "first_deployed_at": {"preview": "2026-09-22T00:00:00Z"},
-  "main_pipeline": {"id": 103, "status": "failed", "failed_jobs": [{"kind": "job", "name": "lint", "allow_failure": false}]}
-}
-```
-
-## Site
-
-Besides `report.json`, `collect` writes `index.html` and its script into the output directory. They come from the
-installed package and change only with it, so the page always matches the report schema. The page loads
-`report.json` from next to itself; it needs a web server, not a `file://` URL.
-
-Switches at the top pick the language, English or Russian, and the theme: as in the system, light, or dark. The page
-starts in the browser's language and remembers both choices in the browser. The copied lists and release post follow
-the language, and so do warnings and errors from `collect`; texts from GitLab and Jira, such as titles, statuses and
-Jira's own error details, stay as written. Times show in the browser's time zone; hovering one shows the value
-as the report holds it.
-
-**Services** lists every service with a production deployment or with rows, and every service that failed to collect,
-as one line: what production runs, the picked tag, how many merge requests or commits and Jira tasks it ships, the
-failed jobs of the picked tag, or of the newest tag before a pick, with the ones allowed to fail counted apart, a mark
-when the range was cut at `RELEASE_SCOPE_MAX_COMMITS`, and how many rows have no tag yet, with a `+` when the cut
-range holds no tag, so more untagged rows may lie below it. The failed jobs are those of the tag's pipeline and of
-the main pipeline of its commit; failures in other rows show only when the line is opened. A service whose
-production runs the head of the default branch, with no rows left to ship, is marked green as fully deployed.
-Opening a line shows the service's environments with when each was deployed, warnings, a link to create the next tag
-on the head when rows have no tag yet, merge requests that are not merged yet, and its rows with tags and their
-pipelines, merge requests or commits with when they were merged or committed, Jira keys with their status,
-environments with the time each first ran the row, and failed jobs; rows out of scope are dimmed.
-Links, including the GitLab settings pages that warnings and errors point to, open in a new
-tab. Each tag has a **pick** button: picking it highlights the rows it ships and closes the line again, which then
-shows the picked tag as a blue chip. The chip's `×` clears the pick without opening the line. A `--jira` report starts
-with each service's release tag picked. Services with neither a production deployment nor rows are left
-out of the page.
-
-The address keeps the picks after `#`, as `team/api=2.4.0&team/web=5.12.0`, so sharing or reloading the page keeps
-them. An address with picks replaces the release tags of a `--jira` report; picks that are not in the report, such as
-a tag that a later run no longer lists, are skipped with a warning. Clearing every pick empties the address, so a
-reload starts from the release tags again.
-
-**Issues**, at the top of the Release column when the report has Jira issues, picks tags from issues instead. It lists
-every issue of the report, Done first and then the rest, by Jira's status category, and filters them by key or
-summary or shows only the chosen ones. Under each issue are the services it touches: the tag that ships it, `no tag
-yet`, `not in this report`, `failed to collect`, or, when it links only to changes outside the range, why: `not
-merged` while a linked merge request is open, `in prod` when one was merged into the default branch (`older than the
-range` when the range was cut), `merged into <branch>`, `closed`, or `in prod or not merged` for a commit or a
-merge request that could not be read. Ticking an issue picks, in every service it touches, the tag a `--jira` run would make its
-release tag: the nearest tag at or above the newest row the issue links to or names. When several chosen issues touch
-a service, the newest of their tags wins; when one of them has no tag yet, the service gets no pick and its line
-links to create the next tag. Each touched service line names the chosen issues it is picked for and the other Jira
-keys its picked tag also ships; in the list those issues are marked `ships anyway`. It also says why a chosen issue
-that links only to changes outside the range has nothing to ship there, such as `SHOP-150 not merged`. Services no chosen issue
-touches are dimmed, and projects the issues link to that are not in the report are listed under the services.
-Unticking an issue clears the picks only it needed. A pick made by hand stays until the chosen issues change, and the
-line says which chosen issues it does not ship. The address keeps the issues before the picks, as
-`issues=SHOP-140,SHOP-141&team/api=2.5.0`.
-
-**Release**, in a column next to the services that stays in view while they scroll, or below them on a narrow screen,
-turns the picked tags into three lists and a release post. While a service is open, the column folds into a strip
-with the number of picked tags and tasks, so the rows get the full width; clicking the strip closes the service. Each has a tab of its own, with a copy button and a text box
-to copy from by hand, since browsers allow the copy button only over HTTPS:
-
-- **Jira tasks**: the keys of every in-scope row from each picked tag down to production, without duplicates, with
-  summary and a status badge: grey to do, blue in progress, green done. Copy them one per line or as a JQL
-  `key in (...)` clause, each in its own box.
-- **Tag pipelines**: the pipeline of each picked tag, as a Markdown list.
-- **Compare**: a GitLab compare link per service from production to the picked tag, as a Markdown list. A service
-  never deployed to production gets the commit history of the tag instead.
-- **Release post**: one Markdown text with a line per picked tag, holding its compare link and pipeline, followed by
-  the Jira tasks with their summaries.
-
-## GitLab Pages
-
-A scheduled pipeline publishes the site with [GitLab Pages](https://docs.gitlab.com/user/project/pages/). Keep it in
-a project of its own, such as `team/release-report`: Pages serves only the site of the project that runs the job,
-and its members are who can view it. `collect` reads the services through the API, so they need no change.
-
-```yaml
-release-report:
-  image: ghcr.io/astral-sh/uv:python3.13-trixie-slim
-  rules:
-    - if: $CI_PIPELINE_SOURCE == "schedule"
-  script:
-    - uvx --from 'release-scope>=0.9,<0.10' release-scope collect --group team/backend --output public || [ $? -eq 1 ]
-  pages: true
-```
-
-`|| [ $? -eq 1 ]` keeps the job green when only some services failed: the page shows their errors, and GitLab deploys
-Pages only from a successful job. A configuration error, a rejected token, or an unreachable group still fails the
-job and keeps the previous site. `pages: true` needs GitLab 17.6 and publishes `public` as the job artifact from 17.10;
-on older versions name the job `pages` and add `artifacts: {paths: [public]}`.
-
-Set `RELEASE_SCOPE_GITLAB__ENDPOINT` and a masked `RELEASE_SCOPE_GITLAB__TOKEN` as CI/CD variables of the project,
-along with the other settings, then add a pipeline schedule. Without [Pages access
-control](https://docs.gitlab.com/administration/pages/#access-control), which an administrator of a self-managed
-instance turns on, a Pages site is public to anyone who can reach it, even for a private project. With it, set
-**Settings > General > Visibility > Pages** to *Only project members*.
+| Exit code | When |
+|---|---|
+| `0` | Everything was collected |
+| `1` | Some services failed, the Jira search failed, or Jira has no issue passed to `--jira`. The report is still written and names each error |
+| `2` | A setting or option is invalid, or the GitLab token is missing |
+| `3` | GitLab rejected the token, or denied access to a group or project passed on the command line |
+| `4` | GitLab failed to return a group or project passed on the command line |
 
 ## Cache
 
-`--cache` names a JSON file that is read if present and rewritten atomically after the run. It holds only facts
-that do not change once settled: which merge requests a commit belongs to, a merged merge request, and the failed
-jobs of a finished pipeline keyed by its `updated_at`, so a retried job invalidates the entry. Within each project
-the run collected, entries it did not use are dropped; other projects keep theirs, so one cache file serves both
-group and `--jira` runs. A missing, corrupt, or older-schema cache is ignored with a warning; the cache only saves
-requests and never changes the report.
+`--cache` names a JSON file that is read if present and rewritten atomically after the run. It holds only facts that do not
+change once settled: which merge requests a commit belongs to, merged merge requests, and the failed jobs of finished
+pipelines. A retried job changes its pipeline's `updated_at`, which invalidates the entry. Entries a run did not use
+are dropped for the projects it collected, so one file serves both group and `--jira` runs. A missing, corrupt, or
+older cache is ignored with a warning. The cache never changes the report.
 
 ## Agent skill
 
 [`skills/release-scope`](https://github.com/modern-python/release-scope/tree/main/skills/release-scope) is an agent
-skill that runs `release-scope` through `uvx` and answers release questions from the report. Ask your coding agent
-what in the current repository has not reached production, what a group will ship with the next tag, or whether a
-Jira issue is released and which services it touches. For the current repository the skill takes `--project` from
-the git remote. It keeps the report and cache outside the repository.
-
-Install it with [skills](https://github.com/vercel-labs/skills):
+skill that runs `release-scope` and answers release questions from the report. Ask your coding agent what in the
+current repository has not reached production, what a group will ship with the next tag, or whether a Jira issue is
+released and which services it touches. For the current repository it takes `--project` from the git remote,
+and it keeps the report and cache outside the repository. Install it with [skills](https://github.com/vercel-labs/skills):
 
 ```sh
 npx skills add modern-python/release-scope
 ```
 
-The agent reads the same environment variables as the CLI, so set them first as described under Configuration.
-The skill runs `release-scope>=0.9,<0.10`, the range whose flags and report schema it describes.
+The agent reads the same environment variables as the CLI, so set them first. The skill runs
+`release-scope>=0.9,<0.10`, the range whose flags and report schema it describes.
+
+## More
+
+- [How collection works](https://github.com/modern-python/release-scope/blob/main/docs/how-it-works.md): the range,
+  rows, Jira links, and `--jira` release states.
+- [The page](https://github.com/modern-python/release-scope/blob/main/docs/page.md): every part of the page and what
+  its labels mean.
+- [Report](https://github.com/modern-python/release-scope/blob/main/docs/report.md): the `report.json` fields, for
+  scripts and agents.
