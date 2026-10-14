@@ -19,6 +19,7 @@ The first-parent commits of the default branch that the production baseline does
 **Row**:
 One unit of the range: a merged merge request (its merge, squash, or fast-forwarded commits) or a single direct
 commit. Not "change" or "entry". A row carries the tags pointing into it; a row without a tag is still a row.
+Its Jira keys are the ones its merge request or commit text names, plus every issue that links to it.
 
 **Main pipeline**:
 The latest `push` pipeline on the default branch for a row's newest commit. Distinct from the **tag pipeline**, the
@@ -30,6 +31,11 @@ A job or bridge whose status is `failed`, including those with `allow_failure`; 
 **Not done**:
 A Jira issue whose status category is anything but `done`. Jira's category, not the status name, which each workflow
 names differently.
+
+**Linked change**:
+A merge request or commit that a Jira issue's Web links point to. A linked merge request in a collected service has a
+state and a target branch, so one outside the range reads as in production, not merged, closed, or merged into
+another branch; a linked commit outside the range stays unknown.
 
 **Related service**:
 A GitLab project that a Jira issue's Web links point to through a merge request or commit, other than the service
@@ -50,6 +56,16 @@ The nearest tag at or above the target: the earliest tag that ships it. Absent w
 A tag in the range that a release could ship. It carries what shipping it means: the rows from its own down to the
 production baseline, the Jira keys of those rows that are in scope, its tag pipeline, and the compare link from
 production.
+
+**Pick**:
+The candidate chosen on the page as a service's release, by hand or from chosen issues. Avoid "selection".
+
+**Chosen issue**:
+A Jira issue ticked on the page; each service it touches picks the tag a `--jira` run would make its release tag.
+Not the issue scope, which a `--jira` run is given before collecting.
+
+**Issue that ships anyway**:
+A Jira issue that a pick ships although nobody chose it, because a tag ships every row below it.
 
 **Untagged rows**:
 The rows above the newest row with a tag, or every row when none has one. Only a tag that does not exist yet can
