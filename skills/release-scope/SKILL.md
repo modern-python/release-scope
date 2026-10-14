@@ -14,7 +14,7 @@ description: >
 through uvx with this version range; it matches the flags and report schema described here:
 
 ```bash
-uvx --from 'release-scope>=0.8,<0.9' release-scope --help
+uvx --from 'release-scope>=0.9,<0.10' release-scope --help
 ```
 
 ## Check the settings
@@ -58,7 +58,7 @@ run and only saves requests:
 ```bash
 out="${XDG_CACHE_HOME:-$HOME/.cache}/release-scope"
 mkdir -p "$out"
-uvx --from 'release-scope>=0.8,<0.9' release-scope collect --project team/backend/shop \
+uvx --from 'release-scope>=0.9,<0.10' release-scope collect --project team/backend/shop \
   --output "$out/site" --cache "$out/cache.json"
 ```
 
@@ -97,7 +97,9 @@ Read `$out/site/report.json` and answer the user's question from it, briefly.
   `compare_url`.
   To answer which issues a set of tags releases, merge the `jira_keys` of the picked candidates.
 - `jira.issues` by key: `summary`, `status`, `status_category` (anything but `done` is not done), `links` to GitLab
-  merge requests and commits. `jira.missing` lists keys Jira did not return; `jira.error` a failed request, as a message. `jira` is
+  merge requests and commits. A merge request link into a collected service has `state` (`opened`, `closed`, `locked`,
+  `merged`) and `target_branch`; `null` for commits, other projects, and unreadable merge requests. A merged link that
+  no row holds was merged before production, or below a cut range, or into another branch. `jira.missing` lists keys Jira did not return; `jira.error` a failed request, as a message. `jira` is
   `null` without a Jira token.
 - In a `--jira` report, `jira_scope` lists the issues, rows with `linked: true` are the ones the issues point to,
   rows with `in_scope: false` sit above the latest linked change and do not ship with the issues, and each service

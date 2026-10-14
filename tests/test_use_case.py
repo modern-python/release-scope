@@ -32,6 +32,7 @@ from tests.payloads import (
     commit,
     jira_issue,
     jira_page,
+    merge_request,
     pipeline,
     project,
     remote_link,
@@ -367,6 +368,63 @@ def test_issue_linked_to_a_commit_joins_the_row_holding_it(jira: respx.Router) -
     rows: typing.Final = _only_service(_collect(with_jira=True)).rows
 
     assert [key.key for key in rows[0].jira_keys] == ["SHOP-12"]
+
+
+@pytest.mark.usefixtures("jira")
+def test_merge_request_link_held_by_a_row_is_merged_into_the_default_branch() -> None:
+    state: typing.Final = _collect(with_jira=True).jira
+
+    assert state is not None
+    assert [(item.project, item.state, item.target_branch) for item in state.issues["SHOP-12"].links] == [
+        ("team/svc", "merged", "main"),
+        ("team/web", None, None),
+        ("team/worker", None, None),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("fields", "expected"),
+    [
+        ({"state": "opened"}, ("opened", "main")),
+        ({"state": "closed"}, ("closed", "main")),
+        ({"target_branch": "release/1.x"}, ("merged", "release/1.x")),
+        ({}, ("merged", "main")),
+    ],
+)
+def test_merge_request_link_outside_the_range_records_its_state(
+    jira: respx.Router, fields: dict[str, str], expected: tuple[str, str]
+) -> None:
+    jira["remote_links:SHOP-9"].respond(json=[remote_link(f"{ENDPOINT}/team/svc/-/merge_requests/14")])
+    jira.get(f"{SERVICE_API}/merge_requests/14", name="mr:14").respond(json=merge_request(14, "Elsewhere", **fields))
+
+    state: typing.Final = _collect(with_jira=True).jira
+
+    assert state is not None
+    assert [(item.state, item.target_branch) for item in state.issues["SHOP-9"].links] == [expected]
+
+
+def test_merged_link_outside_the_range_is_read_from_the_cache(jira: respx.Router) -> None:
+    jira["remote_links:SHOP-9"].respond(json=[remote_link(f"{ENDPOINT}/team/svc/-/merge_requests/14")])
+    jira.get(f"{SERVICE_API}/merge_requests/14", name="mr:14").respond(json=merge_request(14, "Old"))
+    cache: typing.Final = Cache()
+    _collect(cache, with_jira=True)
+
+    second: typing.Final = _collect(Cache(previous=cache.current), with_jira=True).jira
+
+    assert second is not None
+    assert second.issues["SHOP-9"].links[0].state == "merged"
+    assert jira["mr:14"].call_count == 1
+
+
+def test_unreadable_linked_merge_request_leaves_its_state_unknown(jira: respx.Router) -> None:
+    jira["remote_links:SHOP-9"].respond(json=[remote_link(f"{ENDPOINT}/team/svc/-/merge_requests/14")])
+    jira.get(f"{SERVICE_API}/merge_requests/14").respond(404)
+
+    report: typing.Final = _collect(with_jira=True)
+
+    assert report.jira is not None
+    assert report.jira.issues["SHOP-9"].links[0].state is None
+    assert _only_service(report).error is None
 
 
 @pytest.mark.usefixtures("jira")

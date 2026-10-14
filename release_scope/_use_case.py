@@ -154,6 +154,9 @@ class CollectUseCase:
         state: typing.Final = self._read_issues(self.jira, _row_keys(services), exclude) if self.jira else None
         if state is not None:
             self._join_linked_issues(services, state)
+            self._record_link_states(
+                services, state, {project.path_with_namespace: project for project in resolved}, cache
+            )
         return Report(
             collected_at=dt.datetime.now(dt.UTC),
             production_environment=self.settings.production_environment,
@@ -169,6 +172,7 @@ class CollectUseCase:
             raise ConfigError(msg)
         state: typing.Final = self._read_issues(self.jira, keys, exclude)
         services: typing.Final[list[Service]] = []
+        projects: typing.Final[dict[str, Project]] = {}
         if state.error is None:
             links_by_project: dict[str, list[LinkedChange]] = {}
             for key in keys:
@@ -176,7 +180,7 @@ class CollectUseCase:
                 for link in issue.links if issue else []:
                     links_by_project.setdefault(link.project, []).append(link)
             services.extend(
-                self._scoped_service(path, links_by_project[path], cache) for path in sorted(links_by_project)
+                self._scoped_service(path, links_by_project[path], cache, projects) for path in sorted(links_by_project)
             )
             row_state: typing.Final = self._read_issues(
                 self.jira, sorted(set(_row_keys(services)) - set(keys)), exclude
@@ -185,6 +189,7 @@ class CollectUseCase:
             state.missing.extend(row_state.missing)
             state.error = row_state.error
             self._join_linked_issues(services, state)
+            self._record_link_states(services, state, projects, cache)
         return Report(
             collected_at=dt.datetime.now(dt.UTC),
             production_environment=self.settings.production_environment,
@@ -193,12 +198,15 @@ class CollectUseCase:
             jira_scope=list(keys),
         )
 
-    def _scoped_service(self, path: str, links: list[LinkedChange], cache: Cache) -> Service:
+    def _scoped_service(
+        self, path: str, links: list[LinkedChange], cache: Cache, projects: dict[str, Project]
+    ) -> Service:
         try:
             project: typing.Final = self.api.get_project(path)
         except GitLabError as exc:
             project_url: typing.Final = links[0].project_url
             return Service(project=path, project_url=project_url, error=explain_failure(path, project_url, exc))
+        projects[path] = project
         return self._collect_or_explain(project, cache, links=links)
 
     def _collect_or_explain(self, project: Project, cache: Cache, *, links: list[LinkedChange] | None) -> Service:
@@ -232,6 +240,36 @@ class CollectUseCase:
                 (item for item in service.environments if item.name == self.settings.production_environment), None
             )
             service.candidates = build_candidates(service, production)
+
+    def _record_link_states(
+        self, services: list[Service], state: JiraState, projects: dict[str, Project], cache: Cache
+    ) -> None:
+        collected: typing.Final = {
+            service.project: service
+            for service in services
+            if service.error is None and service.default_branch and skip_reason(projects[service.project]) is None
+        }
+        links: typing.Final = [
+            (link, link.iid)
+            for issue in state.issues.values()
+            for link in issue.links
+            if link.iid is not None and link.project in collected
+        ]
+        known: typing.Final = {
+            (link.project, iid): (link.state, link.target_branch) for link, iid in links if link.state is not None
+        }
+        for link, iid in links:
+            service = collected[link.project]
+            if (link.project, iid) not in known:
+                if any(item.iid == iid for row in service.rows for item in row.merge_requests):
+                    known[link.project, iid] = ("merged", service.default_branch)
+                else:
+                    try:
+                        merge_request = self._linked_merge_request(projects[link.project], iid, cache)
+                    except GitLabError:
+                        continue
+                    known[link.project, iid] = (merge_request.state, merge_request.target_branch)
+            link.state, link.target_branch = known[link.project, iid]
 
     def _read_issues(
         self, jira: JiraApi, keys: collections.abc.Sequence[str], exclude: collections.abc.Sequence[str]
@@ -408,6 +446,7 @@ class CollectUseCase:
             if link.iid is None:
                 continue
             merge_request = self._linked_merge_request(project, link.iid, cache)
+            link.state, link.target_branch = merge_request.state, merge_request.target_branch
             if merge_request.state != "merged":
                 pending.append(_merge_request_ref(merge_request))
             elif merge_request.target_branch != default_branch:

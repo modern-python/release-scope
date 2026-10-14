@@ -93,6 +93,10 @@ The report is versioned by `schema_version`; the models live in
 [`release_scope/_report.py`](https://github.com/modern-python/release-scope/blob/main/release_scope/_report.py).
 Top-level `jira` is `null` without a Jira token; otherwise it holds `issues` by key (summary, status, status category,
 issue type, linked GitLab changes), the `missing` keys Jira did not return, and an `error` if a Jira request failed.
+A linked merge request in a collected service has its `state` (`opened`, `closed`, `locked`, or `merged`) and
+`target_branch`. When a row holds it, it is merged into the default branch and costs no request; otherwise it is read
+from GitLab, and a merged one is cached. The state stays `null` for a commit, for a project outside the report, and when
+the merge request cannot be read.
 Warnings and errors, on services and in `jira`, are messages: a `code`, its `params`, and the English `text`.
 Each service lists its `candidates`: the tags a release could ship, newest first, each with its pipeline, the number of
 rows it ships, the in-scope Jira keys of those rows, and the compare link from production, or the tag's commit history
@@ -151,12 +155,15 @@ reload starts from the release tags again.
 **Issues**, at the top of the Release column when the report has Jira issues, picks tags from issues instead. It lists
 every issue of the report, Done first and then the rest, by Jira's status category, and filters them by key or
 summary or shows only the chosen ones. Under each issue are the services it touches: the tag that ships it, `no tag
-yet`, `in prod or not merged` when it links to a merge request or commit outside the range, `not in this report`, or
-`failed to collect`. Ticking an issue picks, in every service it touches, the tag a `--jira` run would make its
+yet`, `not in this report`, `failed to collect`, or, when it links only to changes outside the range, why: `not
+merged` while a linked merge request is open, `in prod` when one was merged into the default branch (`older than the
+range` when the range was cut), `merged into <branch>`, `closed`, or `in prod or not merged` for a commit or a
+merge request that could not be read. Ticking an issue picks, in every service it touches, the tag a `--jira` run would make its
 release tag: the nearest tag at or above the newest row the issue links to or names. When several chosen issues touch
 a service, the newest of their tags wins; when one of them has no tag yet, the service gets no pick and its line
 links to create the next tag. Each touched service line names the chosen issues it is picked for and the other Jira
-keys its picked tag also ships; in the list those issues are marked `ships anyway`. Services no chosen issue
+keys its picked tag also ships; in the list those issues are marked `ships anyway`. It also says why a chosen issue
+that links only to changes outside the range has nothing to ship there, such as `SHOP-150 not merged`. Services no chosen issue
 touches are dimmed, and projects the issues link to that are not in the report are listed under the services.
 Unticking an issue clears the picks only it needed. A pick made by hand stays until the chosen issues change, and the
 line says which chosen issues it does not ship. The address keeps the issues before the picks, as
@@ -188,7 +195,7 @@ release-report:
   rules:
     - if: $CI_PIPELINE_SOURCE == "schedule"
   script:
-    - uvx --from 'release-scope>=0.8,<0.9' release-scope collect --group team/backend --output public || [ $? -eq 1 ]
+    - uvx --from 'release-scope>=0.9,<0.10' release-scope collect --group team/backend --output public || [ $? -eq 1 ]
   pages: true
 ```
 
@@ -227,4 +234,4 @@ npx skills add modern-python/release-scope
 ```
 
 The agent reads the same environment variables as the CLI, so set them first as described under Configuration.
-The skill runs `release-scope>=0.8,<0.9`, the range whose flags and report schema it describes.
+The skill runs `release-scope>=0.9,<0.10`, the range whose flags and report schema it describes.
