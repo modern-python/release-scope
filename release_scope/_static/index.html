@@ -58,9 +58,16 @@
   .scroll { overflow-x: auto; }
   .layout { display: grid; grid-template-columns: minmax(0, 1fr) 420px; gap: 24px; align-items: start; }
   .layout > aside { position: sticky; top: 0; max-height: 100vh; overflow-y: auto; padding: 0 4px 16px; }
+  .strip { display: none; writing-mode: vertical-rl; width: 40px; min-height: 240px; margin-top: 32px; padding: 12px 4px;
+    border-color: var(--accent); color: var(--accent); font-weight: 600; }
+  .layout.folded { grid-template-columns: minmax(0, 1fr) 44px; gap: 12px; }
+  .layout.folded .strip { display: block; }
+  .layout.folded .aside-body { display: none; }
   @media (max-width: 1000px) {
     .layout { display: block; }
     .layout > aside { position: static; max-height: none; }
+    .layout.folded .strip { display: none; }
+    .layout.folded .aside-body { display: block; }
   }
   .tabs { display: flex; flex-wrap: wrap; gap: 4px; margin: 8px 0; }
   .outputs textarea { min-height: 160px; }
@@ -74,15 +81,15 @@
   .service[open] > summary { border-bottom: 1px solid var(--border); }
   .service.deployed { border-left: 4px solid var(--good); background: color-mix(in srgb, var(--good) 6%, transparent); }
   .service.deployed .name { color: var(--good); }
-  .service.chosen { border-left: 4px solid var(--accent); background: color-mix(in srgb, var(--accent) 6%, transparent); }
-  .service.chosen .name { color: var(--accent); }
-  button.unpick { padding: 0 6px; margin-left: 2px; line-height: 1.2; }
+  .chip { display: inline-flex; align-items: center; gap: 4px; padding: 0 4px 0 10px; border-radius: 999px;
+    background: var(--accent); color: var(--bg); font-weight: 600; }
+  .chip button { border: 0; border-radius: 999px; padding: 0 6px; background: transparent; color: inherit; }
+  .chip button:hover { background: color-mix(in srgb, var(--bg) 25%, transparent); }
   .service > summary::before { content: "▸"; color: var(--muted); }
   .service[open] > summary::before { content: "▾"; }
   .service .name { min-width: 200px; font-weight: 600; }
   .service .body { padding: 8px 12px; }
   .service .body > p:first-child { margin-top: 0; }
-  .picked-tag { font-weight: 600; }
   .status { display: inline-block; padding: 0 8px; border: 1px solid currentColor; border-radius: 10px; font-size: 12px;
     font-weight: 600; white-space: nowrap; color: var(--muted); }
   .status-indeterminate { color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
@@ -129,19 +136,20 @@
         <p class="bad message"><template x-for="(part, index) in messageParts(item)" :key="index"><span><template x-if="part.url"><a :href="part.url" x-text="part.text"></a></template><template x-if="!part.url"><span x-text="part.text"></span></template></span></template></p>
       </template>
 
-      <div class="layout">
+      <div class="layout" :class="{ folded: openCount > 0 }">
       <section>
       <h2 x-text="t('services')"></h2>
       <p x-show="pickable.length" class="muted" x-text="t('servicesIntro')"></p>
       <p x-show="ignored.length" class="warn" x-text="t('ignored', { picks: ignored.join(', ') })"></p>
       <template x-for="service in listed" :key="service.project">
-        <details class="service" :class="{ deployed: deployed(service), chosen: pickOf(service) }" name="services">
+        <details class="service" :class="{ deployed: deployed(service) }" name="services"
+          @toggle="openCount = document.querySelectorAll('details.service[open]').length">
           <summary>
             <span class="name" x-text="service.project"></span>
             <span x-show="service.error" class="bad" x-text="t('failedToCollect')"></span>
             <span x-show="!service.error">
               <span class="muted" x-text="productionRef(service) + ' →'"></span>
-              <span x-show="pickOf(service)" class="picked-tag"><span x-text="picks[service.project]"></span><button type="button" class="unpick"
+              <span x-show="pickOf(service)" class="chip"><span x-text="picks[service.project]"></span><button type="button"
                 :title="t('clearPick')" :aria-label="t('clearPick')" @click.prevent="pick(service, '', $el)">×</button></span>
               <span x-show="!pickOf(service)" class="muted" x-text="pickHint(service)"></span>
               <span x-show="deployed(service)" class="status status-done" x-text="t('upToDate')"></span>
@@ -255,6 +263,9 @@
       </section>
 
       <aside>
+      <button type="button" class="strip" @click="closeServices()"
+        x-text="[t('release'), t('tagCount', { count: picked.length }), t('taskCount', { count: tasks.length })].join(' · ')"></button>
+      <div class="aside-body">
       <h2 x-text="t('release')"></h2>
       <p x-show="!pickable.length" class="muted" x-text="t('noCandidates')"></p>
       <p x-show="pickable.length && !picked.length" class="muted" x-text="t('pickToFill')"></p>
@@ -324,6 +335,7 @@
           <textarea readonly rows="16" x-text="releasePost"></textarea>
         </section>
       </div>
+      </div>
       </aside>
       </div>
 
@@ -375,6 +387,7 @@
       rows: { one: "{count} merge request or commit", other: "{count} merge requests or commits" },
       rowsOf: { one: "{count} merge request or commit", other: "{count} merge requests or commits" },
       taskCount: { one: "{count} task", other: "{count} tasks" },
+      tagCount: { one: "{count} tag", other: "{count} tags" },
       shipsOf: "{shipped} of {rows}",
       failedCount: "❌ {count} failed",
       allowedCount: "{count} failed, allowed to fail",
@@ -451,6 +464,7 @@
       rows: { one: "{count} MR или коммит", few: "{count} MR или коммита", many: "{count} MR или коммитов" },
       rowsOf: { one: "{count} MR или коммита", few: "{count} MR или коммитов", many: "{count} MR или коммитов" },
       taskCount: { one: "{count} задача", few: "{count} задачи", many: "{count} задач" },
+      tagCount: { one: "{count} тег", few: "{count} тега", many: "{count} тегов" },
       shipsOf: "{shipped} из {rows}",
       failedCount: "❌ упало: {count}",
       allowedCount: "упало, но падать разрешено: {count}",
@@ -558,6 +572,7 @@
       ignored: [],
       picks: {},
       tab: "tasks",
+      openCount: 0,
       lang: "en",
       theme: "auto",
 
@@ -690,6 +705,9 @@
         this.picks[service.project] = tag;
         element.closest("details").open = false;
         this.writeHash();
+      },
+      closeServices() {
+        for (const item of document.querySelectorAll("details.service[open]")) item.open = false;
       },
       readHash() {
         const decode = (value) => {

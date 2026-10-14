@@ -136,9 +136,9 @@ on the head when rows have no tag yet, merge requests that are not merged yet, a
 pipelines, merge requests or commits with when they were merged or committed, Jira keys with their status,
 environments with the time each first ran the row, and failed jobs; rows out of scope are dimmed.
 Links, including the GitLab settings pages that warnings and errors point to, open in a new
-tab. Each tag has a **pick** button: picking it highlights the rows it ships, marks the service's line blue, and
-closes the line again. The `×` next to the picked tag on the line clears the pick without opening it. A `--jira`
-report starts with each service's release tag picked. Services with neither a production deployment nor rows are left
+tab. Each tag has a **pick** button: picking it highlights the rows it ships and closes the line again, which then
+shows the picked tag as a blue chip. The chip's `×` clears the pick without opening the line. A `--jira` report starts
+with each service's release tag picked. Services with neither a production deployment nor rows are left
 out of the page.
 
 The address keeps the picks after `#`, as `team/api=2.4.0&team/web=5.12.0`, so sharing or reloading the page keeps
@@ -147,7 +147,8 @@ a tag that a later run no longer lists, are skipped with a warning. Clearing eve
 reload starts from the release tags again.
 
 **Release**, in a column next to the services that stays in view while they scroll, or below them on a narrow screen,
-turns the picked tags into three lists and a release post. Each has a tab of its own, with a copy button and a text box
+turns the picked tags into three lists and a release post. While a service is open, the column folds into a strip
+with the number of picked tags and tasks, so the rows get the full width; clicking the strip closes the service. Each has a tab of its own, with a copy button and a text box
 to copy from by hand, since browsers allow the copy button only over HTTPS:
 
 - **Jira tasks**: the keys of every in-scope row from each picked tag down to production, without duplicates, with
