@@ -38,6 +38,11 @@ test *args:
 test-ci:
     uv run --no-sync pytest --cov=release_scope --cov-report term-missing --cov-report xml
 
+# Browser smoke test of the page against a report from the CLI scenario; installs Chromium on first run.
+test-smoke *args:
+    uv run --no-sync playwright install chromium
+    uv run --no-sync pytest -m smoke {{ args }}
+
 # Branch-coverage run (diagnostic; line coverage is the enforced gate, not branch).
 test-branch:
     uv run --no-sync pytest --cov=release_scope --cov-branch

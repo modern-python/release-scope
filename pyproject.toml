@@ -58,6 +58,7 @@ dev = [
     "respx>=0.23.1",
     "httpx>=0.28.1",
     "httpcore2>=2",
+    "pytest-playwright>=0.10",
 ]
 lint = [
     "ruff",
@@ -93,10 +94,13 @@ isort.no-lines-before = ["standard-library", "local-folder"]
 ]
 
 [tool.pytest.ini_options]
-addopts = ""
+addopts = "-m 'not smoke'"
 testpaths = ["tests"]
 # pytest-httpx2 defines this marker in a hook its package never exports, so pytest does not see it.
-markers = ["httpx2: configure the httpx2_mock fixture"]
+markers = [
+    "httpx2: configure the httpx2_mock fixture",
+    "smoke: browser smoke test of the page, run by `just test-smoke`",
+]
 
 [tool.coverage.report]
 fail_under = 100
