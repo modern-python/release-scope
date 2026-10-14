@@ -95,6 +95,35 @@
   .status-indeterminate { color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
   .status-done { color: var(--good); background: color-mix(in srgb, var(--good) 12%, transparent); }
   button.picked { border-color: var(--accent); color: var(--accent); }
+  .service.involved { border-color: var(--accent); }
+  .service.idle { opacity: 0.45; }
+  .service.unlisted { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 8px 12px; border-style: dashed; }
+  .plan-line { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: center; padding-left: 14px; }
+  .plan-line > span { display: inline-flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+  .key { padding: 0 8px; border: 1px solid var(--accent); border-radius: 999px; font-size: 12px; background: var(--accent); color: var(--bg); }
+  .key.rider { border-style: dashed; border-color: var(--warn); background: transparent; color: var(--warn); }
+  .cell { padding: 0 6px; border-radius: 4px; font-size: 12px; white-space: nowrap; }
+  .cell-tag { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
+  .cell-untagged { background: color-mix(in srgb, var(--warn) 16%, transparent); color: var(--warn); }
+  .cell-elsewhere { background: color-mix(in srgb, var(--good) 14%, transparent); color: var(--good); }
+  .cell-outside, .cell-failed { background: color-mix(in srgb, var(--bad) 12%, transparent); color: var(--bad); }
+  .issue-tools { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0; }
+  .issue-tools input { flex: 1; min-width: 140px; font: inherit; padding: 2px 8px; border: 1px solid var(--border); border-radius: 6px;
+    background: var(--bg); color: var(--fg); }
+  .issue-scroll { max-height: 46vh; overflow-y: auto; border: 1px solid var(--border); border-radius: 6px; }
+  .issue-group { position: sticky; top: 0; z-index: 1; padding: 2px 8px; border-bottom: 1px solid var(--border); background: var(--panel);
+    color: var(--muted); font-size: 12px; font-weight: 600; }
+  .issue-row { display: grid; grid-template-columns: 16px 8px 76px minmax(0, 1fr) auto; grid-template-rows: 20px 20px; column-gap: 6px;
+    align-items: center; height: 48px; padding: 4px 8px; border-bottom: 1px solid var(--border); cursor: pointer; }
+  .issue-row:hover { background: color-mix(in srgb, var(--accent) 5%, transparent); }
+  .issue-row.chosen { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+  .issue-row code { font-weight: 600; }
+  .issue-row .summary { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .issue-row .reach { grid-column: 3 / -1; display: flex; gap: 4px; overflow: hidden; white-space: nowrap; }
+  .rider-mark { padding: 0 6px; border: 1px dashed var(--warn); border-radius: 999px; color: var(--warn); font-size: 11px; white-space: nowrap; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+  .dot-indeterminate { background: var(--accent); }
+  .dot-done { background: var(--good); }
 </style>
 </head>
 <body>
@@ -142,7 +171,8 @@
       <p x-show="pickable.length" class="muted" x-text="t('servicesIntro')"></p>
       <p x-show="ignored.length" class="warn" x-text="t('ignored', { picks: ignored.join(', ') })"></p>
       <template x-for="service in listed" :key="service.project">
-        <details class="service" :class="{ deployed: deployed(service) }" name="services"
+        <details class="service" name="services"
+          :class="{ deployed: deployed(service), involved: planOf(service), idle: chosen.length && !planOf(service) }"
           @toggle="openCount = document.querySelectorAll('details.service[open]').length">
           <summary>
             <span class="name" x-text="service.project"></span>
@@ -158,6 +188,31 @@
             <span class="muted" x-text="lineDetails(service)"></span>
             <span x-text="failureCounts(service)"></span>
             <span x-show="service.truncated" class="warn" :title="t('rangeCutTitle')" x-text="t('rangeCut')"></span>
+            <template x-if="planOf(service)">
+              <div class="plan-line">
+                <span><span class="muted" x-text="t('planFor')"></span>
+                  <template x-for="key in planOf(service).keys" :key="key"><span class="key" x-text="key"></span></template></span>
+                <template x-if="alsoShips(service).length">
+                  <span><span class="muted" x-text="t('planAlso')"></span>
+                    <template x-for="key in alsoShips(service)" :key="key">
+                      <span class="key rider" :title="issue(key) ? issue(key).summary : ''" x-text="key"></span>
+                    </template></span>
+                </template>
+                <template x-if="planOf(service).untagged.length">
+                  <span class="warn">
+                    <span x-text="t('planNoTag', { keys: planOf(service).untagged.join(', ') })"></span>
+                    <a :href="service.untagged && service.untagged.create_url"
+                      x-text="service.untagged && service.untagged.next_tag ? t('createTag', { name: service.untagged.next_tag }) : t('createAnyTag')"></a>
+                  </span>
+                </template>
+                <template x-if="planOf(service).elsewhere.length && !planOf(service).best && !planOf(service).untagged.length">
+                  <span class="muted" x-text="t('planElsewhere', { keys: planOf(service).elsewhere.join(', ') })"></span>
+                </template>
+                <template x-if="missedBy(service).length">
+                  <span class="warn" x-text="t('planMissed', { tag: picks[service.project], keys: missedBy(service).join(', ') })"></span>
+                </template>
+              </div>
+            </template>
           </summary>
           <div class="body">
             <p>
@@ -260,12 +315,56 @@
           </div>
         </details>
       </template>
+      <template x-for="entry in unlisted" :key="entry.project">
+        <div class="service unlisted">
+          <b x-text="entry.project"></b>
+          <span class="cell cell-outside" x-text="t('notInReport')"></span>
+          <span class="muted" x-text="t('linkedTo')"></span>
+          <template x-for="key in entry.keys" :key="key"><span class="key" x-text="key"></span></template>
+        </div>
+      </template>
       </section>
 
       <aside>
       <button type="button" class="strip" @click="closeServices()"
         x-text="[t('release'), t('tagCount', { count: picked.length }), t('taskCount', { count: tasks.length })].join(' · ')"></button>
       <div class="aside-body">
+      <div x-show="issueKeys.length">
+        <h2><span x-text="t('chooseIssues')"></span>
+          <span class="muted" style="font-size: 13px; font-weight: 400" x-text="t('issuesChosen', { chosen: chosen.length, count: issueKeys.length })"></span></h2>
+        <div class="issue-tools">
+          <input type="search" :placeholder="t('issueFilter')" :aria-label="t('issueFilter')" x-model="issueFilter">
+          <span>
+            <button type="button" :class="{ picked: issueView === 'all' }" @click="showIssues('all')"
+              x-text="t('issuesAll', { count: issueKeys.length })"></button>
+            <button type="button" :class="{ picked: issueView === 'chosen' }" @click="showIssues('chosen')"
+              x-text="t('issuesChosenView', { count: chosen.length })"></button>
+          </span>
+        </div>
+        <div class="issue-scroll">
+          <template x-for="group in issueGroups" :key="group.name">
+            <div>
+              <div class="issue-group" x-text="t(group.name) + ' · ' + group.keys.length"></div>
+              <template x-for="key in group.keys" :key="key">
+                <label class="issue-row" :class="{ chosen: chosen.includes(key) }">
+                  <input type="checkbox" :checked="chosen.includes(key)" @change="toggleIssue(key)">
+                  <span class="dot" :class="'dot-' + (issue(key).status_category || 'new')" :title="issue(key).status"></span>
+                  <code x-text="key"></code>
+                  <span class="summary" :title="issue(key).summary" x-text="issue(key).summary"></span>
+                  <span class="rider-mark" :title="t('shipsAnywayTitle')" x-text="t('shipsAnyway')"
+                    :style="{ visibility: shipsAnyway(key) ? 'visible' : 'hidden' }"></span>
+                  <span class="reach">
+                    <template x-for="item in reach[key]" :key="item.project">
+                      <span class="cell" :class="'cell-' + item.state" :title="item.project" x-text="reachText(item)"></span>
+                    </template>
+                  </span>
+                </label>
+              </template>
+            </div>
+          </template>
+          <p x-show="!issueGroups.length" class="muted" style="padding: 0 8px" x-text="t('noIssuesMatch')"></p>
+        </div>
+      </div>
       <h2 x-text="t('release')"></h2>
       <p x-show="!pickable.length" class="muted" x-text="t('noCandidates')"></p>
       <p x-show="pickable.length && !picked.length" class="muted" x-text="t('pickToFill')"></p>
@@ -424,6 +523,25 @@
       postNone: "- none",
       postPipeline: "pipeline #{id}",
       legend: "Legend: ✅ success · ❌ failed · 🔄 running · ⏭ canceled or skipped · ⚠️ no pipeline",
+      chooseIssues: "Issues",
+      issuesChosen: "{chosen} of {count} chosen",
+      issueFilter: "Filter by key or summary",
+      issuesAll: "All {count}",
+      issuesChosenView: "Chosen {count}",
+      groupDone: "Done",
+      groupNotDone: "Not done",
+      noIssuesMatch: "No issues match.",
+      shipsAnyway: "ships anyway",
+      shipsAnywayTitle: "Not chosen, but a picked tag ships it",
+      reachUntagged: "no tag yet",
+      reachElsewhere: "in prod or not merged",
+      notInReport: "not in this report",
+      linkedTo: "linked to",
+      planFor: "for",
+      planAlso: "also ships",
+      planNoTag: "{keys}: no tag yet.",
+      planElsewhere: "{keys}: in production or not merged, nothing to pick",
+      planMissed: "{tag} does not ship {keys}",
     },
     ru: {
       language: "Язык",
@@ -501,6 +619,25 @@
       postNone: "- нет",
       postPipeline: "пайплайн #{id}",
       legend: "Обозначения: ✅ прошёл · ❌ упал · 🔄 выполняется · ⏭ отменён или пропущен · ⚠️ нет пайплайна",
+      chooseIssues: "Задачи",
+      issuesChosen: "выбрано {chosen} из {count}",
+      issueFilter: "Фильтр по ключу или названию",
+      issuesAll: "Все {count}",
+      issuesChosenView: "Выбранные {count}",
+      groupDone: "Готово",
+      groupNotDone: "Не готово",
+      noIssuesMatch: "Ничего не найдено.",
+      shipsAnyway: "войдёт и так",
+      shipsAnywayTitle: "Задача не выбрана, но выбранный тег её содержит",
+      reachUntagged: "нет тега",
+      reachElsewhere: "на проде или не влита",
+      notInReport: "нет в этом отчёте",
+      linkedTo: "связан с",
+      planFor: "для",
+      planAlso: "также войдут",
+      planNoTag: "{keys}: тега ещё нет.",
+      planElsewhere: "{keys}: уже на проде или не влиты, выбирать нечего",
+      planMissed: "{tag} не содержит {keys}",
     },
   };
 
@@ -564,6 +701,50 @@
     } catch {}
   };
 
+  const byKey = (a, b) => a.localeCompare(b, undefined, { numeric: true });
+
+  const reachOf = (report) => {
+    const issues = report.jira ? report.jira.issues : {};
+    const reach = Object.fromEntries(Object.keys(issues).map((key) => [key, []]));
+    const projects = new Set(report.services.map((service) => service.project));
+    for (const service of report.services) {
+      const first = { key: new Map(), iid: new Map(), sha: new Map() };
+      service.rows.forEach((row, index) => {
+        for (const item of row.jira_keys) if (!first.key.has(item.key)) first.key.set(item.key, index);
+        for (const item of row.merge_requests) if (!first.iid.has(item.iid)) first.iid.set(item.iid, index);
+        for (const item of row.commits) if (!first.sha.has(item.sha)) first.sha.set(item.sha, index);
+      });
+      for (const [key, issue] of Object.entries(issues)) {
+        const links = issue.links.filter((link) => link.project === service.project);
+        const indexes = [
+          first.key.get(key),
+          ...links.map((link) => (link.iid != null ? first.iid.get(link.iid) : first.sha.get(link.sha))),
+        ].filter((index) => index !== undefined);
+        const project = service.project;
+        if (service.error) {
+          if (links.length) reach[key].push({ project, state: "failed" });
+          continue;
+        }
+        if (!indexes.length) {
+          if (links.length) reach[key].push({ project, state: "elsewhere" });
+          continue;
+        }
+        const index = Math.min(...indexes);
+        let tagIndex = index;
+        while (tagIndex >= 0 && !service.rows[tagIndex].tags.length) tagIndex--;
+        const tags = tagIndex >= 0 ? service.rows[tagIndex].tags : [];
+        reach[key].push(tags.length
+          ? { project, state: "tag", index, tagIndex, tag: tags[tags.length - 1].name }
+          : { project, state: "untagged", index });
+      }
+    }
+    for (const [key, issue] of Object.entries(issues)) {
+      const outside = new Set(issue.links.map((link) => link.project).filter((project) => !projects.has(project)));
+      for (const project of outside) reach[key].push({ project, state: "outside" });
+    }
+    return reach;
+  };
+
   document.addEventListener("alpine:init", () => {
     Alpine.data("releaseScope", () => ({
       report: null,
@@ -575,6 +756,12 @@
       openCount: 0,
       lang: "en",
       theme: "auto",
+      reach: {},
+      chosen: [],
+      autoPicks: {},
+      issueFilter: "",
+      issueView: "all",
+      issueViewKeys: [],
 
       async init() {
         const lang = stored("release-scope-lang");
@@ -588,6 +775,7 @@
             const tag = service.release && service.release.tag ? service.release.tag.name : "";
             this.picks[service.project] = service.candidates.some((item) => item.tag.name === tag) ? tag : "";
           }
+          this.reach = reachOf(report);
           this.report = report;
           this.readHash();
           window.addEventListener("hashchange", () => this.readHash());
@@ -701,6 +889,84 @@
           .join("\n");
       },
 
+      get issueKeys() {
+        return Object.keys(this.reach).sort(byKey);
+      },
+      get issueGroups() {
+        const text = this.issueFilter.trim().toLowerCase();
+        const keys = this.issueKeys.filter(
+          (key) =>
+            (this.issueView === "all" || this.issueViewKeys.includes(key)) &&
+            (!text || `${key} ${this.issue(key).summary}`.toLowerCase().includes(text)),
+        );
+        const done = (key) => this.issue(key).status_category === "done";
+        return [
+          { name: "groupDone", keys: keys.filter(done) },
+          { name: "groupNotDone", keys: keys.filter((key) => !done(key)) },
+        ].filter((group) => group.keys.length);
+      },
+      get plan() {
+        const plan = new Map();
+        for (const key of this.chosen) {
+          for (const item of this.reach[key]) {
+            if (!plan.has(item.project)) {
+              plan.set(item.project, { project: item.project, state: item.state, keys: [], best: null, untagged: [], elsewhere: [] });
+            }
+            const entry = plan.get(item.project);
+            entry.keys.push(key);
+            if (item.state === "tag" && (!entry.best || item.tagIndex < entry.best.tagIndex)) entry.best = item;
+            if (item.state === "untagged") entry.untagged.push(key);
+            if (item.state === "elsewhere") entry.elsewhere.push(key);
+          }
+        }
+        return plan;
+      },
+      get unlisted() {
+        return [...this.plan.values()].filter((entry) => entry.state === "outside");
+      },
+      planOf(service) {
+        return this.plan.get(service.project);
+      },
+      alsoShips(service) {
+        const candidate = this.pickOf(service);
+        return candidate ? candidate.jira_keys.map((item) => item.key).filter((key) => !this.chosen.includes(key)) : [];
+      },
+      missedBy(service) {
+        const tag = this.picks[service.project];
+        if (!tag || !this.planOf(service)) return [];
+        const picked = service.rows.findIndex((row) => row.tags.some((item) => item.name === tag));
+        return this.chosen.filter((key) =>
+          this.reach[key].some((item) => item.project === service.project && item.state === "tag" && picked > item.index));
+      },
+      shipsAnyway(key) {
+        return !this.chosen.includes(key) && this.picked.some(({ candidate }) => candidate.jira_keys.some((item) => item.key === key));
+      },
+      reachText(item) {
+        const name = item.project.split("/").pop();
+        const states = { untagged: "reachUntagged", elsewhere: "reachElsewhere", outside: "notInReport", failed: "failedToCollect" };
+        return `${name} ${item.state === "tag" ? item.tag : this.t(states[item.state])}`;
+      },
+      showIssues(view) {
+        this.issueView = view;
+        this.issueViewKeys = [...this.chosen];
+      },
+      toggleIssue(key) {
+        this.chosen = this.chosen.includes(key) ? this.chosen.filter((item) => item !== key) : [...this.chosen, key].sort(byKey);
+        this.applyIssues();
+        this.writeHash();
+      },
+      applyIssues() {
+        const next = {};
+        for (const entry of this.plan.values()) {
+          if (entry.best && !entry.untagged.length) next[entry.project] = entry.best.tag;
+        }
+        for (const [project, tag] of Object.entries(this.autoPicks)) {
+          if (this.picks[project] === tag && !(project in next)) this.picks[project] = "";
+        }
+        Object.assign(this.picks, next);
+        this.autoPicks = next;
+      },
+
       pick(service, tag, element) {
         this.picks[service.project] = tag;
         element.closest("details").open = false;
@@ -721,6 +987,10 @@
           location.hash.slice(1).split("&").filter(Boolean)
             .map((part) => part.split("=", 2).map(decode)),
         );
+        const issues = (wanted.get("issues") || "").split(",").filter(Boolean);
+        wanted.delete("issues");
+        this.chosen = issues.filter((key) => key in this.reach).sort(byKey);
+        this.applyIssues();
         if (wanted.size) {
           for (const service of this.pickable) {
             const tag = wanted.get(service.project) || "";
@@ -729,12 +999,16 @@
             if (known) wanted.delete(service.project);
           }
         }
-        this.ignored = [...wanted].map(([project, tag]) => (tag ? `${project} ${tag}` : project));
+        this.ignored = [
+          ...issues.filter((key) => !(key in this.reach)),
+          ...[...wanted].map(([project, tag]) => (tag ? `${project} ${tag}` : project)),
+        ];
         this.writeHash();
       },
       writeHash() {
         const encode = (value) => encodeURIComponent(value).replaceAll("%2F", "/");
-        const hash = this.picked.map(({ service, candidate }) => `${encode(service.project)}=${encode(candidate.tag.name)}`).join("&");
+        const picks = this.picked.map(({ service, candidate }) => `${encode(service.project)}=${encode(candidate.tag.name)}`);
+        const hash = [...(this.chosen.length ? [`issues=${this.chosen.map(encode).join(",")}`] : []), ...picks].join("&");
         history.replaceState(null, "", hash ? `#${hash}` : location.pathname + location.search);
       },
       pickOf(service) {

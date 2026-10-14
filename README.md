@@ -146,6 +146,20 @@ them. An address with picks replaces the release tags of a `--jira` report; pick
 a tag that a later run no longer lists, are skipped with a warning. Clearing every pick empties the address, so a
 reload starts from the release tags again.
 
+**Issues**, at the top of the Release column when the report has Jira issues, picks tags from issues instead. It lists
+every issue of the report, Done first and then the rest, by Jira's status category, and filters them by key or
+summary or shows only the chosen ones. Under each issue are the services it touches: the tag that ships it, `no tag
+yet`, `in prod or not merged` when it links to a merge request or commit outside the range, `not in this report`, or
+`failed to collect`. Ticking an issue picks, in every service it touches, the tag a `--jira` run would make its
+release tag: the nearest tag at or above the newest row the issue links to or names. When several chosen issues touch
+a service, the newest of their tags wins; when one of them has no tag yet, the service gets no pick and its line
+links to create the next tag. Each touched service line names the chosen issues it is picked for and the other Jira
+keys its picked tag also ships; in the list those issues are marked `ships anyway`. Services no chosen issue
+touches are dimmed, and projects the issues link to that are not in the report are listed under the services.
+Unticking an issue clears the picks only it needed. A pick made by hand stays until the chosen issues change, and the
+line says which chosen issues it does not ship. The address keeps the issues before the picks, as
+`issues=SHOP-140,SHOP-141&team/api=2.5.0`.
+
 **Release**, in a column next to the services that stays in view while they scroll, or below them on a narrow screen,
 turns the picked tags into three lists and a release post. While a service is open, the column folds into a strip
 with the number of picked tags and tasks, so the rows get the full width; clicking the strip closes the service. Each has a tab of its own, with a copy button and a text box
