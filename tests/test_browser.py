@@ -131,3 +131,41 @@ def test_demo_screenshot_shows_an_issue_with_its_picks(
     assert output.read_bytes().startswith(b"\x89PNG")
     expect(page.locator("details.service .chip:visible > span")).to_have_text(["2.5.0", "1.9.0"])
     assert errors == []
+
+
+def test_clearing_an_issue_pick_unticks_the_issue_and_survives_a_reload(
+    page: Page, site: str, errors: list[str]
+) -> None:
+    page.goto(site)
+    _issue(page, "SHOP-12").check()
+
+    page.locator("details.service .chip").get_by_role("button").click()
+
+    expect(_issue(page, "SHOP-12")).not_to_be_checked()
+    expect(page.locator("details.service .chip")).to_be_hidden()
+    expect(page).not_to_have_url(re.compile("#"))
+    page.reload()
+    expect(page.locator("details.service .chip")).to_be_hidden()
+    assert errors == []
+
+
+def test_picking_an_older_tag_unticks_the_issues_it_misses(page: Page, site: str, errors: list[str]) -> None:
+    page.goto(site)
+    _issue(page, "SHOP-12").check()
+
+    page.locator("details.service summary").click()
+    page.locator(".tag", has_text="1.1.0").get_by_role("button").click()
+
+    expect(_issue(page, "SHOP-12")).not_to_be_checked()
+    expect(page.locator("details.service .chip > span")).to_have_text("1.1.0")
+    expect(page).to_have_url(re.compile(r"#team/svc=1\.1\.0$"))
+    assert errors == []
+
+
+def test_an_address_with_an_older_pick_unticks_the_issues_it_misses(page: Page, site: str, errors: list[str]) -> None:
+    page.goto(f"{site}#issues=SHOP-12&team/svc=1.1.0")
+
+    expect(_issue(page, "SHOP-12")).not_to_be_checked()
+    expect(page.locator("details.service .chip > span")).to_have_text("1.1.0")
+    expect(page).to_have_url(re.compile(r"#team/svc=1\.1\.0$"))
+    assert errors == []

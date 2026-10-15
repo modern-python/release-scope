@@ -84,9 +84,10 @@ issues are marked `ships anyway` in the list. A chosen issue that links only to 
 it has nothing to ship there, such as `SHOP-150 not merged`. Services no chosen issue touches are dimmed, and
 projects the issues link to that are not in the report are listed under the services.
 
-Unticking an issue clears the picks only it needed. A pick made by hand stays until the chosen issues change, and the
-line says which chosen issues it does not ship. The address keeps the issues before the picks, as
-`issues=SHOP-140,SHOP-141&team/api=2.5.0`.
+Unticking an issue clears the picks only it needed. It works the other way too: clearing a pick, or picking an older
+tag that does not ship a chosen issue, unticks that issue, and the picks only it needed in other services go with it.
+An address whose picks miss a chosen issue loads with the issue unticked. The address keeps the issues before the
+picks, as `issues=SHOP-140,SHOP-141&team/api=2.5.0`.
 
 ## Release
 
