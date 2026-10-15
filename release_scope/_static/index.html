@@ -210,9 +210,6 @@
                 <template x-if="planOf(service).elsewhere.length">
                   <span class="muted" x-text="outOfRangeText(planOf(service))"></span>
                 </template>
-                <template x-if="missedBy(service).length">
-                  <span class="warn" x-text="t('planMissed', { tag: picks[service.project], keys: missedBy(service).join(', ') })"></span>
-                </template>
               </div>
             </template>
           </summary>
@@ -548,7 +545,6 @@
       planAlso: "also ships",
       planNoTag: "{keys}: no tag yet.",
       planElsewhere: "{items}, nothing to pick",
-      planMissed: "{tag} does not ship {keys}",
     },
     ru: {
       language: "Язык",
@@ -649,7 +645,6 @@
       planAlso: "также войдут",
       planNoTag: "{keys}: тега ещё нет.",
       planElsewhere: "{items}, выбирать нечего",
-      planMissed: "{tag} не содержит {keys}",
     },
   };
 
@@ -956,13 +951,6 @@
         const candidate = this.pickOf(service);
         return candidate ? candidate.jira_keys.map((item) => item.key).filter((key) => !this.chosen.includes(key)) : [];
       },
-      missedBy(service) {
-        const tag = this.picks[service.project];
-        if (!tag || !this.planOf(service)) return [];
-        const picked = service.rows.findIndex((row) => row.tags.some((item) => item.name === tag));
-        return this.chosen.filter((key) =>
-          this.reach[key].some((item) => item.project === service.project && item.state === "tag" && picked > item.index));
-      },
       shipsAnyway(key) {
         return !this.chosen.includes(key) && this.picked.some(({ candidate }) => candidate.jira_keys.some((item) => item.key === key));
       },
@@ -1011,8 +999,20 @@
 
       pick(service, tag, element) {
         this.picks[service.project] = tag;
+        this.untickMissed(service);
         element.closest("details").open = false;
         this.writeHash();
+      },
+      untickMissed(service) {
+        const tag = this.picks[service.project];
+        const picked = tag ? service.rows.findIndex((row) => row.tags.some((item) => item.name === tag)) : -1;
+        const missed = this.chosen.filter((key) =>
+          this.reach[key].some((item) => item.project === service.project && item.state === "tag" && (picked === -1 || picked > item.index)));
+        if (!missed.length) return;
+        this.chosen = this.chosen.filter((key) => !missed.includes(key));
+        this.applyIssues();
+        this.picks[service.project] = tag;
+        delete this.autoPicks[service.project];
       },
       closeServices() {
         for (const item of document.querySelectorAll("details.service[open]")) item.open = false;
@@ -1040,6 +1040,7 @@
             this.picks[service.project] = known ? tag : "";
             if (known) wanted.delete(service.project);
           }
+          for (const service of this.pickable) this.untickMissed(service);
         }
         this.ignored = [
           ...issues.filter((key) => !(key in this.reach)),
