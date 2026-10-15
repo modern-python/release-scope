@@ -220,3 +220,19 @@ def test_demo_a_shared_pick_stays_while_another_chosen_issue_needs_it(
     expect(_demo_service(page, "shop/web").locator(".chip > span")).to_have_text("1.9.0")
     expect(page).to_have_url(re.compile(r"#issues=SHOP-36&shop/web=1\.9\.0$"))
     assert errors == []
+
+
+def test_demo_a_hand_pick_survives_when_the_issue_is_unticked(page: Page, demo_site: str, errors: list[str]) -> None:
+    page.goto(demo_site)
+    _issue(page, "SHOP-38").check()
+
+    web: typing.Final = _demo_service(page, "shop/web")
+    web.locator("summary").click()
+    web.locator(".tag", has_text="1.9.1").get_by_role("button").click()
+    expect(_issue(page, "SHOP-38")).to_be_checked()
+    _demo_service(page, "shop/api").locator(".chip").get_by_role("button").click()
+
+    expect(_issue(page, "SHOP-38")).not_to_be_checked()
+    expect(web.locator(".chip > span")).to_have_text("1.9.1")
+    expect(page).to_have_url(re.compile(r"#shop/web=1\.9\.1$"))
+    assert errors == []

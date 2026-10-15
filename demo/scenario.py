@@ -122,7 +122,8 @@ SERVICES: typing.Final = (
         production="1.8.0",
         older_tags=("1.7.1",),
         changes=(
-            Change(title="Fix typo in the footer", hours_ago=5, author="anna"),
+            Change(title="Tidy the footer links", hours_ago=5, author="anna"),
+            Change(title="Fix typo in the footer", hours_ago=12, author="anna", tag="1.9.1"),
             Change(
                 title="SHOP-38 Export button on the orders page",
                 hours_ago=28,
