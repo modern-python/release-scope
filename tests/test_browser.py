@@ -169,3 +169,54 @@ def test_an_address_with_an_older_pick_unticks_the_issues_it_misses(page: Page, 
     expect(page.locator("details.service .chip > span")).to_have_text("1.1.0")
     expect(page).to_have_url(re.compile(r"#team/svc=1\.1\.0$"))
     assert errors == []
+
+
+def _demo_service(page: Page, project: str) -> Locator:
+    return page.locator("details.service", has=page.locator(".name", has_text=project))
+
+
+def test_demo_clearing_one_service_pick_unticks_the_issue_in_every_service(
+    page: Page, demo_site: str, errors: list[str]
+) -> None:
+    page.goto(demo_site)
+    _issue(page, "SHOP-38").check()
+
+    _demo_service(page, "shop/api").locator(".chip").get_by_role("button").click()
+
+    expect(_issue(page, "SHOP-38")).not_to_be_checked()
+    expect(_demo_service(page, "shop/web").locator(".chip")).to_be_hidden()
+    expect(page).not_to_have_url(re.compile("#"))
+    assert errors == []
+
+
+def test_demo_picking_an_older_tag_keeps_it_and_clears_the_other_service(
+    page: Page, demo_site: str, errors: list[str]
+) -> None:
+    page.goto(demo_site)
+    _issue(page, "SHOP-38").check()
+
+    api: typing.Final = _demo_service(page, "shop/api")
+    api.locator("summary").click()
+    api.locator(".tag", has_text="2.4.0").get_by_role("button").click()
+
+    expect(_issue(page, "SHOP-38")).not_to_be_checked()
+    expect(api.locator(".chip > span")).to_have_text("2.4.0")
+    expect(_demo_service(page, "shop/web").locator(".chip")).to_be_hidden()
+    expect(page).to_have_url(re.compile(r"#shop/api=2\.4\.0$"))
+    assert errors == []
+
+
+def test_demo_a_shared_pick_stays_while_another_chosen_issue_needs_it(
+    page: Page, demo_site: str, errors: list[str]
+) -> None:
+    page.goto(demo_site)
+    _issue(page, "SHOP-38").check()
+    _issue(page, "SHOP-36").check()
+
+    _demo_service(page, "shop/api").locator(".chip").get_by_role("button").click()
+
+    expect(_issue(page, "SHOP-38")).not_to_be_checked()
+    expect(_issue(page, "SHOP-36")).to_be_checked()
+    expect(_demo_service(page, "shop/web").locator(".chip > span")).to_have_text("1.9.0")
+    expect(page).to_have_url(re.compile(r"#issues=SHOP-36&shop/web=1\.9\.0$"))
+    assert errors == []
