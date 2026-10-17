@@ -10,7 +10,7 @@ issue title.
 
 ## Commands
 
-`just` (task runner) and `uv` (package manager). The [`justfile`](justfile) is the source of truth —
+`just` (task runner) and `uv` (package manager). The [`justfile`](justfile) is the source of truth:
 `just --list`, or read it. Never run bare `ruff check`: `[tool.ruff]` sets `fix = true` and `unsafe-fixes = true`.
 
 ## Architecture
