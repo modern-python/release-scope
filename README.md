@@ -161,3 +161,13 @@ The agent reads the same environment variables as the CLI, so set them first. Th
   its labels mean.
 - [Report](https://github.com/modern-python/release-scope/blob/main/docs/report.md): the `report.json` fields, for
   scripts and agents.
+
+## Links
+
+- [PyPI](https://pypi.org/project/release-scope)
+- [License](https://github.com/modern-python/release-scope/blob/main/LICENSE)
+
+## Part of `modern-python`
+
+Browse the full list of templates and libraries in
+[`modern-python`](https://github.com/modern-python); see the org profile for the categorized index.
