@@ -42,6 +42,10 @@ for agents, and pins the minor version it describes. Update it, and its version 
 A change to the report schema bumps `SCHEMA_VERSION` and ships in a new minor release; anything else is a patch.
 Move the skill's version range and the README's `release-scope>=X.Y,<X.Z` pins to that minor in the same change.
 
+Before pushing a raised dependency floor, run the `floors` steps from
+[`_checks.yml`](.github/workflows/_checks.yml) locally. If resolution fails, raise the direct floor
+it names.
+
 ## Agent skills
 
 ### Issue tracker
