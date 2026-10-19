@@ -19,7 +19,7 @@ classifiers = [
 ]
 version = "0"
 dependencies = [
-    "typer>=0.13",
+    "typer>=0.26",
     # The first release whose pydantic-core ships a wheel for each interpreter.
     "pydantic>=2; python_version < '3.12'",
     "pydantic>=2.0.2; python_version == '3.12'",
