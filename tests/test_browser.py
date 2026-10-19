@@ -236,3 +236,51 @@ def test_demo_a_hand_pick_survives_when_the_issue_is_unticked(page: Page, demo_s
     expect(web.locator(".chip > span")).to_have_text("1.9.1")
     expect(page).to_have_url(re.compile(r"#shop/web=1\.9\.1$"))
     assert errors == []
+
+
+_SHOWN_COLOR_JS: typing.Final = """element => {
+    let alpha = 1;
+    for (let node = element; node; node = node.parentElement) alpha *= Number(getComputedStyle(node).opacity);
+    return [getComputedStyle(element).color, getComputedStyle(document.body).backgroundColor, alpha];
+}"""
+
+
+def _luminance(color: str) -> float:
+    channels: typing.Final = [int(value) / 255 for value in re.findall(r"\d+", color)[:3]]
+    linear: typing.Final = [
+        value / 12.92 if value <= 0.04045 else ((value + 0.055) / 1.055) ** 2.4 for value in channels
+    ]
+    return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
+
+
+def _contrast(element: Locator) -> float:
+    color, background, alpha = element.evaluate(_SHOWN_COLOR_JS)
+    text, ground = _luminance(color), _luminance(background)
+    shown: typing.Final = alpha * text + (1 - alpha) * ground
+    return (max(shown, ground) + 0.05) / (min(shown, ground) + 0.05)
+
+
+@pytest.mark.parametrize("scheme", ["light", "dark"])
+def test_demo_an_idle_service_keeps_readable_text(
+    page: Page, demo_site: str, errors: list[str], scheme: typing.Literal["light", "dark"]
+) -> None:
+    page.emulate_media(color_scheme=scheme)
+    page.goto(demo_site)
+    _issue(page, "SHOP-38").check()
+
+    worker: typing.Final = _demo_service(page, "shop/worker")
+    expect(worker).to_have_class(re.compile(r"\bidle\b"))
+    for text in worker.locator("summary span:visible").all():
+        assert _contrast(text) >= 4.5, text.inner_text()
+    assert errors == []
+
+
+def test_demo_the_side_column_grows_with_a_wide_window(page: Page, demo_site: str, errors: list[str]) -> None:
+    page.set_viewport_size({"width": 1920, "height": 900})
+    page.goto(demo_site)
+
+    box: typing.Final = page.locator(".layout > aside").bounding_box()
+
+    assert box is not None
+    assert box["width"] == pytest.approx(1920 * 0.32, abs=1)
+    assert errors == []
