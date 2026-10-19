@@ -152,8 +152,7 @@ def test_container_builds_a_real_client_from_settings() -> None:
         gitlab=GitLabConfig(endpoint="https://gitlab.test", token=pydantic.SecretStr("t"))
     )
 
-    with ioc.container:
-        ioc.container.override(ioc.SettingsGroup.settings, settings)
+    with ioc.container, ioc.container.override(ioc.SettingsGroup.settings, settings):
         api: typing.Final = ioc.container.resolve(GitLabApi)
 
     assert isinstance(api.http, httpware.Client)
