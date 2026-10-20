@@ -59,7 +59,7 @@
   .warn { color: var(--warn); }
   .message { white-space: pre-line; }
   .scroll { overflow-x: auto; }
-  .layout { display: grid; grid-template-columns: minmax(0, 1fr) clamp(420px, 32vw, 640px); gap: 24px; align-items: start; }
+  .layout { display: grid; grid-template-columns: minmax(0, 3fr) minmax(420px, 2fr); gap: 24px; align-items: start; }
   .layout > aside { position: sticky; top: 0; max-height: 100vh; overflow-y: auto; padding: 0 4px 16px; }
   .strip { display: none; writing-mode: vertical-rl; width: 40px; min-height: 240px; margin-top: 32px; padding: 12px 4px;
     border-color: var(--accent); color: var(--accent); font-weight: 600; }
@@ -82,7 +82,7 @@
   .service > summary { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; padding: 8px 12px; cursor: pointer;
     list-style: none; }
   .service[open] > summary { border-bottom: 1px solid var(--border); }
-  .service.deployed { border-left: 4px solid var(--good); background: color-mix(in srgb, var(--good) 6%, transparent); }
+  .service.deployed { box-shadow: inset 3px 0 0 var(--good); background: color-mix(in srgb, var(--good) 6%, transparent); }
   .service.deployed .name { color: var(--good); }
   .chip { display: inline-flex; align-items: center; gap: 4px; padding: 0 4px 0 10px; border-radius: 999px;
     background: var(--pill-bg); color: var(--pill-fg); font-weight: 600; }
@@ -91,6 +91,8 @@
   .service > summary::before { content: "▸"; color: var(--muted); }
   .service[open] > summary::before { content: "▾"; }
   .service .name { min-width: 200px; font-weight: 600; }
+  .service .prod { display: inline-block; min-width: 8rem; }
+  .service .target { display: inline-flex; min-width: 8rem; }
   .service .body { padding: 8px 12px; }
   .service .body > p:first-child { margin-top: 0; }
   .status { display: inline-block; padding: 0 8px; border: 1px solid currentColor; border-radius: 10px; font-size: 12px;
@@ -184,10 +186,10 @@
             <span class="name" x-text="service.project"></span>
             <span x-show="service.error" class="bad" x-text="t('failedToCollect')"></span>
             <span x-show="!service.error">
-              <span class="muted" x-text="productionRef(service) + ' →'"></span>
-              <span x-show="pickOf(service)" class="chip"><span x-text="picks[service.project]"></span><button type="button"
+              <span class="muted prod" x-text="productionRef(service) + ' →'"></span>
+              <span class="target"><span x-show="pickOf(service)" class="chip"><span x-text="picks[service.project]"></span><button type="button"
                 :title="t('clearPick')" :aria-label="t('clearPick')" @click.prevent="pick(service, '', $el)">×</button></span>
-              <span x-show="!pickOf(service)" class="muted" x-text="pickHint(service)"></span>
+              <span x-show="!pickOf(service)" class="muted" x-text="pickHint(service)"></span></span>
               <span x-show="deployed(service)" class="status status-done" x-text="t('upToDate')"></span>
               <span x-show="service.untagged" class="warn" x-text="untaggedText(service, 'untagged', 'untaggedAtLeast')"></span>
             </span>
