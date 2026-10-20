@@ -275,12 +275,37 @@ def test_demo_an_idle_service_keeps_readable_text(
     assert errors == []
 
 
-def test_demo_the_side_column_grows_with_a_wide_window(page: Page, demo_site: str, errors: list[str]) -> None:
+def test_demo_the_side_column_takes_two_fifths_of_a_wide_window(page: Page, demo_site: str, errors: list[str]) -> None:
     page.set_viewport_size({"width": 1920, "height": 900})
     page.goto(demo_site)
 
+    layout: typing.Final = page.locator(".layout").bounding_box()
     box: typing.Final = page.locator(".layout > aside").bounding_box()
 
+    assert layout is not None
     assert box is not None
-    assert box["width"] == pytest.approx(1920 * 0.32, abs=1)
+    assert box["width"] == pytest.approx((layout["width"] - 24) * 0.4, abs=1)
+    assert errors == []
+
+
+def _left(element: Locator) -> float:
+    box: typing.Final = element.bounding_box()
+    assert box is not None
+    return box["x"]
+
+
+def test_demo_service_rows_line_up_with_and_without_a_pick(page: Page, demo_site: str, errors: list[str]) -> None:
+    page.goto(f"{demo_site}#shop/web=1.9.0")
+    expect(_demo_service(page, "shop/web").locator(".chip")).to_be_visible()
+
+    names: typing.Final = [
+        _left(_demo_service(page, project).locator(".name")) for project in ("shop/admin", "shop/api")
+    ]
+    states: typing.Final = [
+        _left(_demo_service(page, project).locator("summary .warn").first)
+        for project in ("shop/api", "shop/web", "shop/worker")
+    ]
+
+    assert names[0] == pytest.approx(names[1], abs=0.5)
+    assert max(states) - min(states) < 0.5, states
     assert errors == []
