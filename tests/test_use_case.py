@@ -13,7 +13,7 @@ from release_scope._cache import Cache
 from release_scope._errors import AuthError, GitLabError
 from release_scope._gitlab import GitLabApi
 from release_scope._jira import JiraApi
-from release_scope._report import Message, MessageCode, Report, Service, Untagged
+from release_scope._report import IssueRelation, Message, MessageCode, Report, Service, Untagged
 from release_scope._settings import GitLabConfig, Settings
 from release_scope._use_case import CollectUseCase
 from tests.payloads import (
@@ -30,6 +30,7 @@ from tests.payloads import (
     SERVICE_API,
     TAGS,
     commit,
+    issue_link,
     jira_issue,
     jira_page,
     merge_request,
@@ -246,7 +247,7 @@ def test_jira_issues_of_all_rows_come_from_one_search(jira: respx.Router) -> Non
     body: typing.Final = json.loads(jira["jira_search"].calls.last.request.content)
     assert body == {
         "jql": 'key in ("SHOP-12", "SHOP-13", "SHOP-9")',
-        "fields": ["summary", "status", "issuetype"],
+        "fields": ["summary", "status", "issuetype", "issuelinks", "parent", "subtasks"],
         "startAt": 0,
         "maxResults": 100,
         "validateQuery": False,
@@ -861,3 +862,84 @@ def test_commit_without_message_uses_its_title_for_jira_keys(gitlab: respx.Route
     rows: typing.Final = _only_service(_collect()).rows
 
     assert [key.key for key in rows[0].jira_keys] == ["SHOP-77"]
+
+
+def _with_relations(jira: respx.Router, *related: dict[str, typing.Any], second: httpx.Response | None = None) -> None:
+    shop_12: typing.Final = jira_issue(
+        "SHOP-12",
+        "New endpoint",
+        issuelinks=[
+            issue_link("Blocks", "is blocked by", "blocks", outward_issue="SHOP-200"),
+            issue_link("Relates", "relates to", "relates to", inward_issue="SHOP-9"),
+            issue_link("Blocks", "is blocked by", "blocks", inward_issue="OPS-5"),
+        ],
+        parent={"key": "SHOP-100", "fields": {}},
+        subtasks=[{"key": "SHOP-13", "fields": {}}],
+    )
+    jira["jira_search"].side_effect = [
+        httpx.Response(200, json=jira_page(JIRA_ISSUES[0], shop_12)),
+        second or httpx.Response(200, json=jira_page(*related)),
+    ]
+    for item in related:
+        jira.get(f"{JIRA_ISSUE_API}/{item['key']}/remotelink", name=f"remote_links:{item['key']}").respond(json=[])
+
+
+def test_jira_issues_record_their_links_parent_and_subtasks(jira: respx.Router) -> None:
+    _with_relations(jira, jira_issue("SHOP-100", "Story"), jira_issue("SHOP-200", "Schema"))
+
+    state: typing.Final = _collect(with_jira=True).jira
+
+    assert state is not None
+    assert state.issues["SHOP-12"].relations == [
+        IssueRelation(kind="link", key="SHOP-200", type="Blocks", direction="outward", label="blocks"),
+        IssueRelation(kind="link", key="SHOP-9", type="Relates", direction="inward", label="relates to"),
+        IssueRelation(kind="parent", key="SHOP-100"),
+        IssueRelation(kind="subtask", key="SHOP-13"),
+    ]
+    assert [(key, issue.via_relation) for key, issue in state.issues.items()] == [
+        ("SHOP-12", False),
+        ("SHOP-9", False),
+        ("SHOP-100", True),
+        ("SHOP-200", True),
+    ]
+    body: typing.Final = json.loads(jira["jira_search"].calls.last.request.content)
+    assert body["jql"] == 'key in ("SHOP-100", "SHOP-200")'
+    assert jira["remote_links:SHOP-200"].call_count == 1
+
+
+def test_related_issues_are_read_one_hop_deep(jira: respx.Router) -> None:
+    _with_relations(
+        jira,
+        jira_issue("SHOP-100", "Story"),
+        jira_issue(
+            "SHOP-200", "Schema", issuelinks=[issue_link("Blocks", "is blocked by", "blocks", outward_issue="SHOP-300")]
+        ),
+    )
+
+    state: typing.Final = _collect(with_jira=True).jira
+
+    assert state is not None
+    assert [item.key for item in state.issues["SHOP-200"].relations] == ["SHOP-300"]
+    assert "SHOP-300" not in state.issues
+    assert jira["jira_search"].call_count == 2
+
+
+def test_related_issue_linked_into_a_row_joins_it(jira: respx.Router) -> None:
+    _with_relations(jira, jira_issue("SHOP-100", "Story"), jira_issue("SHOP-200", "Schema"))
+    jira["remote_links:SHOP-200"].respond(json=[remote_link(f"{ENDPOINT}/team/svc/-/merge_requests/11")])
+
+    service: typing.Final = _only_service(_collect(with_jira=True))
+
+    assert [(key.key, key.via) for key in service.rows[2].jira_keys] == [("SHOP-200", ["linked"])]
+
+
+@pytest.mark.httpx2(assert_all_called=False)
+def test_jira_failure_reading_related_issues_keeps_the_direct_ones(jira: respx.Router) -> None:
+    _with_relations(jira, second=httpx.Response(500))
+
+    state: typing.Final = _collect(with_jira=True).jira
+
+    assert state is not None
+    assert state.error is not None
+    assert state.error.text == "Jira returned 500 for the issue search."
+    assert sorted(state.issues) == ["SHOP-12", "SHOP-9"]

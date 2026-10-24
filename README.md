@@ -88,7 +88,8 @@ every label and rule.
 
 Set `RELEASE_SCOPE_JIRA_ENDPOINT` and `RELEASE_SCOPE_JIRA_TOKEN` to add Jira. `collect` then reads the summary and
 status of every key the rows mention, and the GitLab merge requests and commits linked to each issue through GitLab's
-Jira integration.
+Jira integration. It also records each issue's Jira issue links, parent, and subtasks, and reads those issues one hop
+deep from Jira, without collecting more projects.
 
 `--jira` collects only the services some Jira issues link to, instead of a group or project:
 

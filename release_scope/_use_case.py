@@ -10,7 +10,7 @@ from release_scope._cache import Cache, CachedPipeline
 from release_scope._candidates import build_candidates, build_untagged
 from release_scope._errors import AuthError, ConfigError, GitLabError, JiraError
 from release_scope._gitlab import Commit, Deployment, GitLabApi, MergeRequest, Pipeline, Project
-from release_scope._jira import JiraApi
+from release_scope._jira import IssueFields, JiraApi
 from release_scope._jira_keys import extract_jira_keys
 from release_scope._links import parse_gitlab_link
 from release_scope._messages import (
@@ -27,6 +27,7 @@ from release_scope._report import (
     CommitRef,
     EnvironmentState,
     FailedJob,
+    IssueRelation,
     JiraIssue,
     JiraKeyRef,
     JiraState,
@@ -97,6 +98,35 @@ def _row_keys(services: list[Service]) -> list[str]:
     return sorted({key.key for service in services for row in service.rows if row.in_scope for key in row.jira_keys})
 
 
+def _relations(fields: IssueFields, allowed_projects: collections.abc.Collection[str]) -> list[IssueRelation]:
+    relations: typing.Final[list[IssueRelation]] = []
+    for link in fields.issuelinks:
+        if link.inward_issue is not None:
+            relations.append(
+                IssueRelation(
+                    kind="link",
+                    key=link.inward_issue.key,
+                    type=link.type.name,
+                    direction="inward",
+                    label=link.type.inward,
+                )
+            )
+        if link.outward_issue is not None:
+            relations.append(
+                IssueRelation(
+                    kind="link",
+                    key=link.outward_issue.key,
+                    type=link.type.name,
+                    direction="outward",
+                    label=link.type.outward,
+                )
+            )
+    if fields.parent is not None:
+        relations.append(IssueRelation(kind="parent", key=fields.parent.key))
+    relations.extend(IssueRelation(kind="subtask", key=item.key) for item in fields.subtasks)
+    return [item for item in relations if not allowed_projects or item.key.split("-", 1)[0] in allowed_projects]
+
+
 def _holds(row: Row, link: LinkedChange) -> bool:
     if link.iid is not None:
         return any(item.iid == link.iid for item in row.merge_requests)
@@ -151,8 +181,10 @@ class CollectUseCase:
             for project in resolved
             if not _excluded(project.path_with_namespace, exclude)
         ]
-        state: typing.Final = self._read_issues(self.jira, _row_keys(services), exclude) if self.jira else None
-        if state is not None:
+        state: JiraState | None = None
+        if self.jira is not None:
+            state = self._read_issues(self.jira, _row_keys(services), exclude)
+            self._read_related(self.jira, state, exclude)
             self._join_linked_issues(services, state)
             self._record_link_states(
                 services, state, {project.path_with_namespace: project for project in resolved}, cache
@@ -188,6 +220,7 @@ class CollectUseCase:
             state.issues.update(row_state.issues)
             state.missing.extend(row_state.missing)
             state.error = row_state.error
+            self._read_related(self.jira, state, exclude)
             self._join_linked_issues(services, state)
             self._record_link_states(services, state, projects, cache)
         return Report(
@@ -299,6 +332,7 @@ class CollectUseCase:
                 status_category=fields.status.category.key if fields.status.category else None,
                 issue_type=fields.issuetype.name if fields.issuetype else None,
                 url=self._jira_url(key),
+                relations=_relations(fields, self.settings.jira_project_keys),
             )
         try:
             for key, issue in state.issues.items():
@@ -306,6 +340,18 @@ class CollectUseCase:
         except JiraError as exc:
             state.error = exc.message
         return state
+
+    def _read_related(self, jira: JiraApi, state: JiraState, exclude: collections.abc.Sequence[str]) -> None:
+        if state.error is not None:
+            return
+        known: typing.Final = {*state.issues, *state.missing}
+        keys: typing.Final = {relation.key for issue in state.issues.values() for relation in issue.relations}
+        related: typing.Final = self._read_issues(jira, sorted(keys - known), exclude)
+        for issue in related.issues.values():
+            issue.via_relation = True
+        state.issues.update(related.issues)
+        state.missing.extend(related.missing)
+        state.error = related.error
 
     def _linked_changes(self, jira: JiraApi, key: str, exclude: collections.abc.Sequence[str]) -> list[LinkedChange]:
         changes: typing.Final[dict[str, LinkedChange]] = {}

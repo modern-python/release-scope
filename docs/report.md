@@ -8,8 +8,12 @@ the values come from.
 
 - `services`: one entry per collected service.
 - `jira`: `null` without a Jira token. Otherwise it holds `issues` by key (summary, status, status category, issue
-  type, and linked GitLab changes with their `state` and `target_branch`), the `missing` keys Jira did not return,
-  and an `error` if a Jira request failed.
+  type, linked GitLab changes with their `state` and `target_branch`, `relations`, and `via_relation`), the `missing`
+  keys Jira did not return, and an `error` if a Jira request failed.
+
+A relation has a `kind` (`link`, `parent`, or `subtask`) and the other issue's `key`. A `link` also has Jira's link
+`type` name, the `direction` from this issue (`inward` or `outward`), and the `label` Jira shows for that direction,
+such as `is blocked by`. `via_relation: true` marks an issue the report holds only because another one relates to it.
 - `jira_scope`: the keys passed to `--jira`, empty for a group or project run.
 
 Warnings and errors, on services and in `jira`, are messages: a `code`, its `params`, and the English `text`.

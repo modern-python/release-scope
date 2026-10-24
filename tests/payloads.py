@@ -166,7 +166,12 @@ FAILED_BRIDGES: typing.Final = {
 
 
 def jira_issue(
-    key: str, summary: str, *, status: str = "In Progress", category: str = "indeterminate"
+    key: str,
+    summary: str,
+    *,
+    status: str = "In Progress",
+    category: str = "indeterminate",
+    **fields: typing.Any,  # noqa: ANN401
 ) -> dict[str, typing.Any]:
     return {
         "key": key,
@@ -174,7 +179,19 @@ def jira_issue(
             "summary": summary,
             "status": {"name": status, "statusCategory": {"key": category}},
             "issuetype": {"name": "Task"},
+            **fields,
         },
+    }
+
+
+def issue_link(
+    name: str, inward: str, outward: str, *, inward_issue: str | None = None, outward_issue: str | None = None
+) -> dict[str, typing.Any]:
+    issues: typing.Final = {"inwardIssue": inward_issue, "outwardIssue": outward_issue}
+    return {
+        "id": "1",
+        "type": {"id": "1", "name": name, "inward": inward, "outward": outward},
+        **{field: {"key": key, "fields": {}} for field, key in issues.items() if key},
     }
 
 

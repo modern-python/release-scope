@@ -145,6 +145,14 @@ class LinkedChange(pydantic.BaseModel):
     target_branch: str | None = None
 
 
+class IssueRelation(pydantic.BaseModel):
+    kind: typing.Literal["link", "parent", "subtask"]
+    key: str
+    type: str | None = None
+    direction: typing.Literal["inward", "outward"] | None = None
+    label: str | None = None
+
+
 class JiraIssue(pydantic.BaseModel):
     key: str
     summary: str
@@ -153,6 +161,8 @@ class JiraIssue(pydantic.BaseModel):
     issue_type: str | None
     url: str | None = None
     links: list[LinkedChange] = pydantic.Field(default_factory=list)
+    relations: list[IssueRelation] = pydantic.Field(default_factory=list)
+    via_relation: bool = False
 
 
 class JiraState(pydantic.BaseModel):

@@ -12,7 +12,7 @@ from release_scope._messages import jira_status, jira_token_rejected, jira_unrea
 _SEARCH: typing.Final = "/rest/api/2/search"
 _ISSUE: typing.Final = "/rest/api/2/issue"
 _BATCH_SIZE: typing.Final = 100
-_FIELDS: typing.Final = ("summary", "status", "issuetype")
+_FIELDS: typing.Final = ("summary", "status", "issuetype", "issuelinks", "parent", "subtasks")
 
 
 class StatusCategory(pydantic.BaseModel):
@@ -28,10 +28,29 @@ class IssueType(pydantic.BaseModel):
     name: str
 
 
+class LinkType(pydantic.BaseModel):
+    name: str
+    inward: str
+    outward: str
+
+
+class IssueRef(pydantic.BaseModel):
+    key: str
+
+
+class IssueLink(pydantic.BaseModel):
+    type: LinkType
+    inward_issue: IssueRef | None = pydantic.Field(default=None, alias="inwardIssue")
+    outward_issue: IssueRef | None = pydantic.Field(default=None, alias="outwardIssue")
+
+
 class IssueFields(pydantic.BaseModel):
     summary: str
     status: Status
     issuetype: IssueType | None = None
+    issuelinks: list[IssueLink] = pydantic.Field(default_factory=list)
+    parent: IssueRef | None = None
+    subtasks: list[IssueRef] = pydantic.Field(default_factory=list)
 
 
 class Issue(pydantic.BaseModel):

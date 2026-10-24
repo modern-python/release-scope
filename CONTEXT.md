@@ -41,6 +41,14 @@ another branch; a linked commit outside the range stays unknown.
 A GitLab project that a Jira issue's Web links point to through a merge request or commit, other than the service
 the row belongs to. It need not be in the report.
 
+**Relation**:
+A Jira issue link (such as "blocks" or "relates to"), parent, or subtask between two Jira issues. Not an epic.
+Distinct from a linked change, which points at GitLab.
+
+**Related issue**:
+A Jira issue the report holds only because another issue has a relation to it. It is read one hop deep, from Jira
+alone: no project is collected for it, so its changes in services outside the report stay unknown.
+
 **Issue scope**:
 The Jira issues a `--jira` run was given. Its services are the projects those issues link to.
 
