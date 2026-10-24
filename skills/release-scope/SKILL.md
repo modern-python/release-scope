@@ -14,7 +14,7 @@ description: >
 through uvx with this version range; it matches the flags and report schema described here:
 
 ```bash
-uvx --from 'release-scope>=0.9,<0.10' release-scope --help
+uvx --from 'release-scope>=0.11,<0.12' release-scope --help
 ```
 
 ## Check the settings
@@ -58,7 +58,7 @@ run and only saves requests:
 ```bash
 out="${XDG_CACHE_HOME:-$HOME/.cache}/release-scope"
 mkdir -p "$out"
-uvx --from 'release-scope>=0.9,<0.10' release-scope collect --project team/backend/shop \
+uvx --from 'release-scope>=0.11,<0.12' release-scope collect --project team/backend/shop \
   --output "$out/site" --cache "$out/cache.json"
 ```
 
@@ -83,7 +83,8 @@ Read `$out/site/report.json` and answer the user's question from it, briefly.
 - A row is one merged merge request or a direct commit: `merge_requests`, `commits`, `tags` pointing into it,
   `environments` running exactly its commit now, `first_deployed_at` (per environment other than production, when the
   first deploy job that shipped this row or a newer one finished), `jira_keys` (the keys its merge request or commit
-  text names, plus, with Jira, every issue whose GitLab links point into the row), and `main_pipeline` with
+  text names, plus, with Jira, every issue whose GitLab links point into the row; each key's `via` holds `named`,
+  `linked`, or both, to say which), and `main_pipeline` with
   `failed_jobs`. Tag pipelines carry their own `failed_jobs`.
 - A service with no rows is up to date with production.
 - A service never deployed to production has a `no_production` warning; its rows run down to the first commit of the
@@ -93,7 +94,7 @@ Read `$out/site/report.json` and answer the user's question from it, briefly.
   highest `X.Y.Z` tag with its minor version bumped, or `null`), and `create_url`, GitLab's new-tag form for the head.
   It is `null` when the head is tagged or the service has no rows.
 - `candidates` (newest first): the tags a release could ship, each with `tag` and its `pipeline`, `rows` (how many
-  rows run from that tag down to production), `jira_keys` (the in-scope keys of those rows, without duplicates), and
+  rows run from that tag down to production), `jira_keys` (the in-scope keys of those rows, without duplicates, with `via` merged across them), and
   `compare_url`.
   To answer which issues a set of tags releases, merge the `jira_keys` of the picked candidates.
 - `jira.issues` by key: `summary`, `status`, `status_category` (anything but `done` is not done), `links` to GitLab

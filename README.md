@@ -58,7 +58,7 @@ release-report:
   rules:
     - if: $CI_PIPELINE_SOURCE == "schedule"
   script:
-    - uvx --from 'release-scope>=0.9,<0.10' release-scope collect --group team/backend --output public || [ $? -eq 1 ]
+    - uvx --from 'release-scope>=0.11,<0.12' release-scope collect --group team/backend --output public || [ $? -eq 1 ]
   pages: true
 ```
 
@@ -151,7 +151,7 @@ npx skills add modern-python/release-scope
 ```
 
 The agent reads the same environment variables as the CLI, so set them first. The skill runs
-`release-scope>=0.9,<0.10`, the range whose flags and report schema it describes.
+`release-scope>=0.11,<0.12`, the range whose flags and report schema it describes.
 
 ## More
 

@@ -5,7 +5,7 @@ import typing
 import pydantic
 
 
-SCHEMA_VERSION: typing.Final = 7
+SCHEMA_VERSION: typing.Final = 8
 
 
 class MessageCode(enum.StrEnum):
@@ -75,6 +75,7 @@ class CommitRef(pydantic.BaseModel):
 class JiraKeyRef(pydantic.BaseModel):
     key: str
     url: str | None
+    via: list[typing.Literal["named", "linked"]]
 
 
 class Row(pydantic.BaseModel):
@@ -161,7 +162,7 @@ class JiraState(pydantic.BaseModel):
 
 
 class Report(pydantic.BaseModel):
-    schema_version: typing.Literal[7] = SCHEMA_VERSION
+    schema_version: typing.Literal[8] = SCHEMA_VERSION
     collected_at: dt.datetime
     production_environment: str
     services: list[Service]

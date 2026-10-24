@@ -3,7 +3,7 @@ import re
 import typing
 from urllib.parse import quote, urlencode
 
-from release_scope._report import Candidate, EnvironmentState, Service, Untagged
+from release_scope._report import Candidate, EnvironmentState, JiraKeyRef, Service, Untagged
 
 
 _VERSION_PATTERN: typing.Final = re.compile(r"(v?)(\d+)\.(\d+)\.(\d+)")
@@ -16,7 +16,10 @@ def build_candidates(service: Service, production: EnvironmentState | None) -> l
     candidates: list[Candidate] = []
     for index, row in enumerate(service.rows):
         shipped = service.rows[index:]
-        keys = {key.key: key for item in shipped if item.in_scope for key in item.jira_keys}
+        keys: dict[str, JiraKeyRef] = {}
+        for key in (key for item in shipped if item.in_scope for key in item.jira_keys):
+            ref = keys.setdefault(key.key, key.model_copy(update={"via": []}))
+            ref.via.extend(source for source in key.via if source not in ref.via)
         candidates.extend(
             Candidate(
                 tag=tag,

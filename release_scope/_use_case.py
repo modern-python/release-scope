@@ -231,11 +231,15 @@ class CollectUseCase:
             if not links:
                 continue
             for row in service.rows:
-                named = {item.key for item in row.jira_keys}
+                refs = {item.key: item for item in row.jira_keys}
                 for key, link in links:
-                    if key not in named and _holds(row, link):
-                        row.jira_keys.append(JiraKeyRef(key=key, url=self._jira_url(key)))
-                        named.add(key)
+                    if not _holds(row, link):
+                        continue
+                    if key not in refs:
+                        refs[key] = JiraKeyRef(key=key, url=self._jira_url(key), via=[])
+                        row.jira_keys.append(refs[key])
+                    if "linked" not in refs[key].via:
+                        refs[key].via.append("linked")
             production = next(
                 (item for item in service.environments if item.name == self.settings.production_environment), None
             )
@@ -547,7 +551,7 @@ class CollectUseCase:
             merge_requests=[_merge_request_ref(item) for item in draft.merge_requests],
             commits=[_commit_ref(commit) for commit in draft.commits],
             jira_keys=[
-                JiraKeyRef(key=key, url=self._jira_url(key))
+                JiraKeyRef(key=key, url=self._jira_url(key), via=["named"])
                 for key in extract_jira_keys(texts, allowed_projects=self.settings.jira_project_keys)
             ],
             environments=[item.name for item in environments if item.sha in shas],
