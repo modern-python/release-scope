@@ -583,6 +583,7 @@
       postServices: "**Services**",
       postTasks: "**Jira tasks ({count})**",
       postNone: "- none",
+      postGaps: "**Left behind ({count})**",
       postPipeline: "pipeline #{id}",
       legend: "Legend: ✅ success · ❌ failed · 🔄 running · ⏭ canceled or skipped · ⚠️ no pipeline",
       chooseIssues: "Issues",
@@ -693,6 +694,7 @@
       postServices: "**Сервисы**",
       postTasks: "**Задачи Jira ({count})**",
       postNone: "- нет",
+      postGaps: "**Не войдёт в релиз ({count})**",
       postPipeline: "пайплайн #{id}",
       legend: "Обозначения: ✅ прошёл · ❌ упал · 🔄 выполняется · ⏭ отменён или пропущен · ⚠️ нет пайплайна",
       chooseIssues: "Задачи",
@@ -965,16 +967,22 @@
         return jira && jira.error ? [jira.error] : [];
       },
       get picked() {
+        return this.pickedFor(this.picks);
+      },
+      pickedFor(picks) {
         return this.pickable
           .map((service) => ({
             service,
-            candidate: this.pickOf(service),
+            candidate: service.candidates.find((item) => item.tag.name === picks[service.project]),
           }))
           .filter((item) => item.candidate);
       },
       get tasks() {
+        return this.tasksOf(this.picked);
+      },
+      tasksOf(picked) {
         const tasks = new Map();
-        for (const { service, candidate } of this.picked) {
+        for (const { service, candidate } of picked) {
           const shipped = service.rows.slice(this.tagRow(service, candidate.tag.name)).filter((row) => row.in_scope);
           for (const key of candidate.jira_keys) {
             if (!tasks.has(key.key)) tasks.set(key.key, { key: key.key, url: key.url, issue: this.issue(key.key), sources: [] });
@@ -988,10 +996,13 @@
         return [...tasks.values()];
       },
       get gaps() {
-        const starts = new Map(this.picked.map(({ service, candidate }) => [service.project, this.tagRow(service, candidate.tag.name)]));
+        return this.gapsOf(this.picked);
+      },
+      gapsOf(picked) {
+        const starts = new Map(picked.map(({ service, candidate }) => [service.project, this.tagRow(service, candidate.tag.name)]));
         const lines = (key) =>
           (this.reach[key] || []).map((item) => ({ ...item, key, reason: this.gapReason(item, starts) })).filter((item) => item.reason);
-        return this.tasks
+        return this.tasksOf(picked)
           .map((task) => ({
             ...task,
             lines: lines(task.key),
@@ -1015,14 +1026,24 @@
           .map((link) => ({ url: link.url, label: link.iid != null ? "!" + link.iid : link.sha.slice(0, 8) }));
       },
       get neededPicks() {
+        const picks = { ...this.picks };
         const needed = new Map();
-        for (const task of this.gaps) {
-          for (const line of [...task.lines, ...task.deps.flatMap((dep) => dep.lines)]) {
-            const known = needed.get(line.project);
-            if (line.state === "tag" && (!known || line.tagIndex < known.tagIndex)) needed.set(line.project, line);
+        for (;;) {
+          const round = new Map();
+          for (const task of this.gapsOf(this.pickedFor(picks))) {
+            for (const line of [...task.lines, ...task.deps.flatMap((dep) => dep.lines)]) {
+              const known = round.get(line.project);
+              if (line.state === "tag" && picks[line.project] !== line.tag && (!known || line.tagIndex < known.tagIndex)) {
+                round.set(line.project, line);
+              }
+            }
+          }
+          if (!round.size) return [...needed.values()];
+          for (const line of round.values()) {
+            picks[line.project] = line.tag;
+            needed.set(line.project, line);
           }
         }
-        return [...needed.values()];
       },
       pickGap(line) {
         this.pick(this.serviceOf(line.project), line.tag);
@@ -1081,13 +1102,27 @@
           return `- ${item.service.project} ${item.candidate.tag.name}: ${compare} · ${build}`;
         });
         const tasks = this.tasks.map((task) => `- [${task.key}](${task.url})${task.issue ? " " + task.issue.summary : ""}`);
+        const gaps = this.gaps;
         return [
           this.t("postServices"),
           ...services,
           "",
           this.t("postTasks", { count: tasks.length }),
           ...(tasks.length ? tasks : [this.t("postNone")]),
+          ...(gaps.length ? ["", this.t("postGaps", { count: gaps.length }), ...gaps.flatMap((task) => this.postGap(task))] : []),
         ].join("\n");
+      },
+      postGap(task) {
+        const line = (item, indent) =>
+          `${indent}- ${item.project}: ${[item.reason, ...this.gapChanges(item).map((change) => `[${change.label}](${change.url})`)].join(" ")}`;
+        return [
+          `- [${task.key}](${task.url})${task.issue ? " " + task.issue.summary : ""}`,
+          ...task.lines.map((item) => line(item, "  ")),
+          ...task.deps.flatMap((dep) => [
+            `  - ${this.relationLabel(dep.relation)} [${dep.key}](${dep.issue.url}) ${dep.issue.summary}${dep.lines.length ? "" : ": " + dep.issue.status}`,
+            ...dep.lines.map((item) => line(item, "    ")),
+          ]),
+        ];
       },
       get compareMarkdown() {
         return this.picked

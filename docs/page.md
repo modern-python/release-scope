@@ -113,7 +113,8 @@ Those issues show their key and summary too, and the services they miss sit unde
 A service that needs a tag has a **Pick** button for it, which picks the tag without opening the service. `no tag yet`
 links to create the next tag, and `not merged`, `merged into <branch>`, and `in prod or not merged` link to the merge
 requests or commits. When any line needs a tag, a button next to the title picks every needed tag at once, the newest
-one per service. A newer pick can ship more tasks, and the list then shows what those leave behind.
+one per service. A needed tag can ship more tasks that need tags of their own, so the button also picks those, and its
+count includes them.
 
 Changes already in production and closed merge requests are not listed. Other relations, such as `blocks`,
 `relates to`, or a parent, do not hold a release back; they show only when you hover over the issue's key.
@@ -129,4 +130,6 @@ allow the copy button only over HTTPS.
 - **Compare**: a GitLab compare link per service from production to the picked tag, as a Markdown list. A service
   never deployed to production gets the tag's commit history instead.
 - **Release post**: one Markdown text with a line per picked tag, holding its compare link and pipeline, followed by
-  the Jira tasks with their summaries.
+  the Jira tasks with their summaries. When the picks leave something behind, a **Left behind** section follows with
+  the same groups as the list above: each task, the services it misses with the reason and links to the merge
+  requests, and the issues it depends on.
