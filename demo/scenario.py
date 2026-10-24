@@ -61,6 +61,7 @@ class DemoIssue:
     category: str
     issue_type: str = "Story"
     links: tuple[str, ...] = ()
+    blocked_by: tuple[str, ...] = ()
 
 
 SERVICES: typing.Final = (
@@ -175,7 +176,12 @@ SERVICES: typing.Final = (
             ),
         ),
     ),
-    DemoService(id=14, name="admin", production="3.1.0"),
+    DemoService(
+        id=14,
+        name="admin",
+        production="3.1.0",
+        linked=(LinkedMergeRequest(iid=15, title="SHOP-44 Export permission for managers", state="opened"),),
+    ),
 )
 
 ISSUES: typing.Final = (
@@ -200,6 +206,7 @@ ISSUES: typing.Final = (
         status="In Review",
         category="indeterminate",
         links=(f"{ENDPOINT}/shop/api/-/merge_requests/40",),
+        blocked_by=("SHOP-45",),
     ),
     DemoIssue(
         key="SHOP-38",
@@ -211,6 +218,7 @@ ISSUES: typing.Final = (
             f"{ENDPOINT}/shop/web/-/merge_requests/120",
             f"{ENDPOINT}/shop/mobile/-/merge_requests/7",
         ),
+        blocked_by=("SHOP-44",),
     ),
     DemoIssue(
         key="SHOP-40",
@@ -226,6 +234,14 @@ ISSUES: typing.Final = (
         category="indeterminate",
         links=(f"{ENDPOINT}/shop/web/-/merge_requests/125",),
     ),
+    DemoIssue(
+        key="SHOP-44",
+        summary="Only managers may export orders",
+        status="In Progress",
+        category="indeterminate",
+        links=(f"{ENDPOINT}/shop/admin/-/merge_requests/15",),
+    ),
+    DemoIssue(key="SHOP-45", summary="Pick the dark palette with design", status="To Do", category="new"),
 )
 
 
@@ -383,6 +399,13 @@ def _issue(issue: DemoIssue) -> dict[str, typing.Any]:
             "summary": issue.summary,
             "status": {"name": issue.status, "statusCategory": {"key": issue.category}},
             "issuetype": {"name": issue.issue_type},
+            "issuelinks": [
+                {
+                    "type": {"name": "Blocks", "inward": "is blocked by", "outward": "blocks"},
+                    "inwardIssue": {"key": key},
+                }
+                for key in issue.blocked_by
+            ],
         },
     }
 
