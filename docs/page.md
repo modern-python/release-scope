@@ -112,9 +112,9 @@ Those issues show their key and summary too, and the services they miss sit unde
 
 A service that needs a tag has a **Pick** button for it, which picks the tag without opening the service. `no tag yet`
 links to create the next tag, and `not merged`, `merged into <branch>`, and `in prod or not merged` link to the merge
-requests or commits. When any line needs a tag, a button next to the title picks every needed tag at once, the newest
-one per service. A needed tag can ship more tasks that need tags of their own, so the button also picks those, and its
-count includes them.
+requests or commits. A service `not in this report` links to its project in GitLab. When any line needs a tag, a
+button next to the title picks every needed tag at once, the newest one per service. A needed tag can ship more tasks
+that need tags of their own, so the button also picks those, and its count includes them.
 
 Changes already in production and closed merge requests are not listed. Other relations, such as `blocks`,
 `relates to`, or a parent, do not hold a release back; they show only when you hover over the issue's key.
