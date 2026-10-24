@@ -126,7 +126,14 @@
   .issue-row:hover { background: color-mix(in srgb, var(--accent) 5%, transparent); }
   .issue-row.chosen { background: color-mix(in srgb, var(--accent) 10%, transparent); }
   .issue-row code { font-weight: 500; }
-  .gaps ul { margin: 4px 0 12px; padding-left: 18px; }
+  .gaps { margin: 4px 0 12px; }
+  .gaps > p { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; }
+  .gap-task { padding: 6px 0; border-top: 1px solid var(--border); }
+  .gap-head, .gap-dep-head, .gap-line { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; min-height: 24px; }
+  .gap-head .dot, .gap-dep-head .dot { align-self: center; flex: none; }
+  .gap-dep-head, .gap-line { padding-left: 16px; }
+  .gap-line.nested { padding-left: 32px; }
+  .gap-line button { padding: 0 8px; font-size: 12px; }
   .row-key.via-jira > a { text-decoration: underline dashed; text-underline-offset: 3px; }
   .link-icon { width: 13px; height: 13px; margin-right: 2px; vertical-align: -2px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
   .issue-row .summary { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -380,10 +387,48 @@
       <p x-show="pickable.length && !picked.length" class="muted" x-text="t('pickToFill')"></p>
       <p x-show="copyFailed" class="warn" x-text="t('copyFailed')"></p>
       <div class="gaps" x-show="picked.length && gaps.length">
-        <p class="warn" x-text="t('gapsTitle')"></p>
-        <ul>
-          <template x-for="gap in gaps" :key="gap"><li x-text="gap"></li></template>
-        </ul>
+        <p class="warn"><span x-text="t('gapsTitle')"></span>
+          <button type="button" x-show="neededPicks.length" @click="pickNeeded()" x-text="t('gapPickAll', { count: neededPicks.length })"></button></p>
+        <template x-for="task in gaps" :key="task.key">
+          <div class="gap-task">
+            <div class="gap-head">
+              <span class="dot" :class="'dot-' + (task.issue ? task.issue.status_category : 'new')" :title="task.issue && task.issue.status"></span>
+              <a :href="task.url" x-text="task.key"></a>
+              <span x-text="task.issue ? task.issue.summary : ''"></span>
+            </div>
+            <template x-for="(item, index) in gapRows(task)" :key="index">
+              <div>
+                <template x-if="item.dep">
+                  <div class="gap-dep-head">
+                    <span class="muted" x-text="relationLabel(item.dep.relation)"></span>
+                    <span class="dot" :class="'dot-' + (item.dep.issue.status_category || 'new')" :title="item.dep.issue.status"></span>
+                    <a :href="item.dep.issue.url" x-text="item.dep.key"></a>
+                    <span class="muted" x-text="item.dep.issue.summary"></span>
+                    <template x-if="!item.dep.lines.length">
+                      <span :class="statusClass(item.dep.issue)" x-text="item.dep.issue.status"></span>
+                    </template>
+                  </div>
+                </template>
+                <template x-if="item.line">
+                  <div class="gap-line" :class="{ nested: item.nested }">
+                    <span :title="item.line.project" x-text="shortName(item.line.project)"></span>
+                    <span class="cell" :class="'cell-' + (item.line.state === 'tag' ? 'untagged' : item.line.state)" x-text="item.line.reason"></span>
+                    <template x-if="item.line.state === 'tag'">
+                      <button type="button" @click="pickGap(item.line)" x-text="t('gapPick', { tag: item.line.tag })"></button>
+                    </template>
+                    <template x-if="item.line.state === 'untagged'">
+                      <a :href="serviceOf(item.line.project).untagged.create_url"
+                        x-text="serviceOf(item.line.project).untagged.next_tag ? t('createTag', { name: serviceOf(item.line.project).untagged.next_tag }) : t('createAnyTag')"></a>
+                    </template>
+                    <template x-for="change in gapChanges(item.line)" :key="change.url">
+                      <a :href="change.url" x-text="change.label"></a>
+                    </template>
+                  </div>
+                </template>
+              </div>
+            </template>
+          </div>
+        </template>
       </div>
 
       <div class="outputs" x-show="picked.length">
@@ -569,6 +614,8 @@
       taskFrom: "from {items}",
       gapsTitle: "Left behind by these picks:",
       gapNeeds: "needs {tag}",
+      gapPick: "Pick {tag}",
+      gapPickAll: { one: "Pick {count} needed tag", other: "Pick {count} needed tags" },
       relationParent: "has parent",
       relationSubtask: "has subtask",
     },
@@ -677,6 +724,8 @@
       taskFrom: "из {items}",
       gapsTitle: "Не войдёт в релиз с выбранными тегами:",
       gapNeeds: "нужен тег {tag}",
+      gapPick: "Выбрать {tag}",
+      gapPickAll: { one: "Выбрать {count} нужный тег", few: "Выбрать {count} нужных тега", many: "Выбрать {count} нужных тегов" },
       relationParent: "входит в",
       relationSubtask: "включает подзадачу",
     },
@@ -760,6 +809,23 @@
     return { state: "elsewhere" };
   };
 
+  const namesOf = (report) => {
+    const issues = report.jira ? Object.values(report.jira.issues) : [];
+    const projects = new Set([
+      ...report.services.map((service) => service.project),
+      ...issues.flatMap((issue) => issue.links.map((link) => link.project)),
+    ]);
+    const paths = [...projects].map((project) => project.split("/"));
+    const suffix = (parts, size) => parts.slice(-size).join("/");
+    return Object.fromEntries(
+      paths.map((parts) => {
+        let size = 1;
+        while (size < parts.length && paths.some((other) => other !== parts && suffix(other, size) === suffix(parts, size))) size++;
+        return [parts.join("/"), suffix(parts, size)];
+      }),
+    );
+  };
+
   const reachOf = (report) => {
     const issues = report.jira ? report.jira.issues : {};
     const reach = Object.fromEntries(Object.keys(issues).map((key) => [key, []]));
@@ -814,6 +880,7 @@
       lang: "en",
       theme: "auto",
       reach: {},
+      names: {},
       chosen: [],
       autoPicks: {},
       issueFilter: "",
@@ -833,6 +900,7 @@
             this.picks[service.project] = service.candidates.some((item) => item.tag.name === tag) ? tag : "";
           }
           this.reach = reachOf(report);
+          this.names = namesOf(report);
           this.report = report;
           this.readHash();
           window.addEventListener("hashchange", () => this.readHash());
@@ -883,17 +951,11 @@
       get listed() {
         return this.report.services.filter((service) => service.error || this.production(service) || service.rows.length);
       },
-      get sharedPrefix() {
-        const paths = this.listed.map((service) => service.project.split("/"));
-        if (paths.length < 2) return "";
-        const shared = paths.reduce((prefix, parts) => {
-          const end = prefix.findIndex((part, index) => part !== parts[index] || index >= parts.length - 1);
-          return end === -1 ? prefix : prefix.slice(0, end);
-        });
-        return shared.length ? shared.join("/") + "/" : "";
-      },
       shortName(project) {
-        return this.sharedPrefix && project.startsWith(this.sharedPrefix) ? project.slice(this.sharedPrefix.length) : project;
+        return this.names[project] || project;
+      },
+      serviceOf(project) {
+        return this.report.services.find((service) => service.project === project);
       },
       get pickable() {
         return this.listed.filter((service) => service.candidates.length);
@@ -927,22 +989,46 @@
       },
       get gaps() {
         const starts = new Map(this.picked.map(({ service, candidate }) => [service.project, this.tagRow(service, candidate.tag.name)]));
-        const gaps = new Set();
-        const check = (source, relation, key) => {
-          const via = relation ? ` ${this.relationLabel(relation)} ${key}` : "";
-          const reach = this.reach[key] || [];
-          for (const item of reach) {
-            const reason = this.gapReason(item, starts);
-            if (reason) gaps.add(`${source}${via} → ${this.shortName(item.project)}: ${reason}`);
+        const lines = (key) =>
+          (this.reach[key] || []).map((item) => ({ ...item, key, reason: this.gapReason(item, starts) })).filter((item) => item.reason);
+        return this.tasks
+          .map((task) => ({
+            ...task,
+            lines: lines(task.key),
+            deps: (task.issue ? task.issue.relations.filter(dependsOn) : [])
+              .map((relation) => ({ relation, key: relation.key, issue: this.issue(relation.key), lines: lines(relation.key) }))
+              .filter((dep) =>
+                dep.lines.length || (dep.issue && !(this.reach[dep.key] || []).length && dep.issue.status_category !== "done")),
+          }))
+          .filter((task) => task.lines.length || task.deps.length);
+      },
+      gapRows(task) {
+        return [
+          ...task.lines.map((line) => ({ line })),
+          ...task.deps.flatMap((dep) => [{ dep }, ...dep.lines.map((line) => ({ line, nested: true }))]),
+        ];
+      },
+      gapChanges(line) {
+        if (!["open", "branch", "elsewhere"].includes(line.state)) return [];
+        return this.issue(line.key).links
+          .filter((link) => link.project === line.project)
+          .map((link) => ({ url: link.url, label: link.iid != null ? "!" + link.iid : link.sha.slice(0, 8) }));
+      },
+      get neededPicks() {
+        const needed = new Map();
+        for (const task of this.gaps) {
+          for (const line of [...task.lines, ...task.deps.flatMap((dep) => dep.lines)]) {
+            const known = needed.get(line.project);
+            if (line.state === "tag" && (!known || line.tagIndex < known.tagIndex)) needed.set(line.project, line);
           }
-          const issue = this.issue(key);
-          if (relation && !reach.length && issue && issue.status_category !== "done") gaps.add(`${source}${via}: ${issue.status}`);
-        };
-        for (const task of this.tasks) {
-          check(task.key, null, task.key);
-          for (const relation of task.issue ? task.issue.relations.filter(dependsOn) : []) check(task.key, relation, relation.key);
         }
-        return [...gaps];
+        return [...needed.values()];
+      },
+      pickGap(line) {
+        this.pick(this.serviceOf(line.project), line.tag);
+      },
+      pickNeeded() {
+        for (const line of this.neededPicks) this.pickGap(line);
       },
       gapReason(item, starts) {
         if (item.state === "tag" || item.state === "untagged") {
@@ -1076,7 +1162,7 @@
         return entry.best || entry.untagged.length ? items : this.t("planElsewhere", { items });
       },
       reachText(item) {
-        return `${item.project.split("/").pop()} ${this.reachLabel(item)}`;
+        return `${this.shortName(item.project)} ${this.reachLabel(item)}`;
       },
       showIssues(view) {
         this.issueView = view;
@@ -1102,7 +1188,7 @@
       pick(service, tag, element) {
         this.picks[service.project] = tag;
         this.untickMissed(service);
-        element.closest("details").open = false;
+        if (element) element.closest("details").open = false;
         this.writeHash();
       },
       untickMissed(service) {

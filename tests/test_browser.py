@@ -66,7 +66,7 @@ def _issue(page: Page, key: str) -> Locator:
 def test_page_lists_the_services_without_errors(page: Page, site: str, errors: list[str]) -> None:
     page.goto(site)
 
-    expect(page.locator("details.service .name")).to_have_text(["team/svc"])
+    expect(page.locator("details.service .name")).to_have_text(["svc"])
     expect(page.locator(".issue-row code")).to_have_text(["SHOP-9", "SHOP-12"])
     assert errors == []
 
@@ -115,8 +115,8 @@ def test_demo_lists_its_services_and_picks_tags_for_an_issue(page: Page, demo_si
     page.goto(demo_site)
 
     names = page.locator("details.service .name")
-    expect(names).to_have_text(["admin", "api", "web", "worker"])
-    expect(names.first).to_have_attribute("title", "shop/admin")
+    expect(names).to_have_text(["shop/admin", "api", "web", "worker"])
+    expect(names.nth(1)).to_have_attribute("title", "shop/api")
     expect(page.locator(".issue-row code")).to_have_count(9)
     _issue(page, "SHOP-38").check()
     expect(page).to_have_url(re.compile(r"#issues=SHOP-38&shop/api=2\.5\.0&shop/web=1\.9\.0$"))
@@ -330,34 +330,90 @@ def test_demo_only_a_key_the_change_does_not_mention_is_marked_as_via_jira(
     assert errors == []
 
 
-def test_demo_a_hand_pick_lists_the_changes_it_leaves_behind(page: Page, demo_site: str, errors: list[str]) -> None:
+def test_demo_names_a_service_by_its_repo_and_keeps_the_group_only_when_two_share_a_name(
+    page: Page, demo_site: str, errors: list[str]
+) -> None:
     page.goto(demo_site)
-    gaps: typing.Final = page.locator(".gaps li")
 
-    api: typing.Final = _demo_service(page, "shop/api")
-    api.locator("summary").click()
-    api.locator(".tag", has_text="2.5.0").get_by_role("button").click()
+    _issue(page, "SHOP-38").check()
 
-    expect(gaps).to_have_text(
+    outside: typing.Final = page.locator(".service.unlisted b")
+    expect(outside).to_have_text(["mobile"])
+    expect(outside).to_have_attribute("title", "partners/mobile")
+    expect(page.locator(".issue-row", has=page.locator("code", has_text="SHOP-44")).locator(".cell")).to_have_text(
+        ["shop/admin not merged", "legacy/admin not in this report"]
+    )
+    assert errors == []
+
+
+def _pick_by_hand(page: Page, project: str, tag: str) -> None:
+    service: typing.Final = _demo_service(page, project)
+    service.locator("summary").click()
+    service.locator(".tag", has_text=tag).get_by_role("button").click()
+
+
+def test_demo_a_hand_pick_lists_what_it_leaves_behind_under_each_task(
+    page: Page, demo_site: str, errors: list[str]
+) -> None:
+    page.goto(demo_site)
+    tasks: typing.Final = page.locator(".gap-task")
+
+    _pick_by_hand(page, "shop/api", "2.5.0")
+
+    expect(tasks.locator(".gap-head")).to_have_text(
+        ["SHOP-38 Export orders as CSV", "SHOP-35 VAT is off by a cent on mixed carts"]
+    )
+    export: typing.Final = tasks.first
+    expect(export.locator(".gap-head a")).to_have_attribute("href", "https://jira.example.com/browse/SHOP-38")
+    expect(export.locator(".gap-line")).to_have_text(
         [
-            "SHOP-38 → web: needs 1.9.0",
-            "SHOP-38 → mobile: not in this report",
-            "SHOP-38 is blocked by SHOP-44 → admin: not merged",
-            "SHOP-35 → worker: needs 0.15.0",
+            "web needs 1.9.0 Pick 1.9.0",
+            "mobile not in this report",
+            "shop/admin not merged !15",
+            "legacy/admin not in this report",
         ]
     )
-    web: typing.Final = _demo_service(page, "shop/web")
-    web.locator("summary").click()
-    web.locator(".tag", has_text="1.9.0").get_by_role("button").click()
-    expect(gaps).to_have_text(
+    expect(export.locator(".gap-dep-head")).to_have_text(["is blocked by SHOP-44 Only managers may export orders"])
+    expect(export.get_by_role("link", name="!15")).to_have_attribute(
+        "href", "https://gitlab.example.com/shop/admin/-/merge_requests/15"
+    )
+
+    _pick_by_hand(page, "shop/web", "1.9.0")
+
+    expect(tasks.locator(".gap-head")).to_have_text(
+        ["SHOP-38 Export orders as CSV", "SHOP-35 VAT is off by a cent on mixed carts", "SHOP-36 Dark mode"]
+    )
+    expect(tasks.nth(2).locator(".gap-dep-head")).to_have_text(
         [
-            "SHOP-38 → mobile: not in this report",
-            "SHOP-38 is blocked by SHOP-44 → admin: not merged",
-            "SHOP-35 → worker: needs 0.15.0",
-            "SHOP-36 is blocked by SHOP-45: To Do",
-            "SHOP-36 has subtask SHOP-46: To Do",
+            "is blocked by SHOP-45 Pick the dark palette with design To Do",
+            "has subtask SHOP-46 Dark mode in emails To Do",
         ]
     )
+    assert errors == []
+
+
+def test_demo_picking_the_tag_a_left_behind_line_needs_keeps_the_service_closed(
+    page: Page, demo_site: str, errors: list[str]
+) -> None:
+    page.goto(demo_site)
+    _pick_by_hand(page, "shop/api", "2.5.0")
+
+    page.locator(".gap-line", has_text="web").get_by_role("button", name="Pick 1.9.0").click()
+
+    expect(_demo_service(page, "shop/web").locator(".chip > span")).to_have_text("1.9.0")
+    expect(page.locator(".gap-line", has_text="web")).to_have_count(0)
+    expect(page).to_have_url(re.compile(r"#shop/api=2\.5\.0&shop/web=1\.9\.0$"))
+    assert errors == []
+
+
+def test_demo_picking_every_needed_tag_at_once(page: Page, demo_site: str, errors: list[str]) -> None:
+    page.goto(demo_site)
+    _pick_by_hand(page, "shop/api", "2.5.0")
+
+    page.get_by_role("button", name="Pick 2 needed tags").click()
+
+    expect(_demo_service(page, "shop/web").locator(".chip > span")).to_have_text("1.9.0")
+    expect(_demo_service(page, "shop/worker").locator(".chip > span")).to_have_text("0.15.0")
     assert errors == []
 
 
@@ -386,18 +442,13 @@ def test_demo_related_issues_have_their_own_group_and_relations_show_on_hover(
 
 def test_demo_left_behind_list_reads_in_russian(page: Page, demo_site: str, errors: list[str]) -> None:
     page.goto(demo_site)
-    for project, tag in (("shop/api", "2.5.0"), ("shop/web", "1.9.0")):
-        service = _demo_service(page, project)
-        service.locator("summary").click()
-        service.locator(".tag", has_text=tag).get_by_role("button").click()
+    _pick_by_hand(page, "shop/api", "2.5.0")
+    _pick_by_hand(page, "shop/web", "1.9.0")
 
     page.get_by_role("combobox").first.select_option("ru")
 
-    expect(page.locator(".gaps p")).to_have_text("Не войдёт в релиз с выбранными тегами:")  # noqa: RUF001
-    expect(page.locator(".gaps li")).to_contain_text(
-        [
-            "SHOP-35 → worker: нужен тег 0.15.0",
-            "SHOP-36 включает подзадачу SHOP-46: To Do",
-        ]
-    )
+    expect(page.locator(".gaps > p > span")).to_have_text("Не войдёт в релиз с выбранными тегами:")  # noqa: RUF001
+    expect(page.locator(".gap-line", has_text="worker")).to_have_text("worker нужен тег 0.15.0 Выбрать 0.15.0")
+    expect(page.locator(".gap-dep-head").last).to_have_text("включает подзадачу SHOP-46 Dark mode in emails To Do")
+    expect(page.get_by_role("button", name="Выбрать 1 нужный тег")).to_be_visible()
     assert errors == []

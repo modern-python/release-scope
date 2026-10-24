@@ -221,7 +221,7 @@ ISSUES: typing.Final = (
         links=(
             f"{ENDPOINT}/shop/api/-/merge_requests/57",
             f"{ENDPOINT}/shop/web/-/merge_requests/120",
-            f"{ENDPOINT}/shop/mobile/-/merge_requests/7",
+            f"{ENDPOINT}/partners/mobile/-/merge_requests/7",
         ),
         blocked_by=("SHOP-44",),
     ),
@@ -244,7 +244,7 @@ ISSUES: typing.Final = (
         summary="Only managers may export orders",
         status="In Progress",
         category="indeterminate",
-        links=(f"{ENDPOINT}/shop/admin/-/merge_requests/15",),
+        links=(f"{ENDPOINT}/shop/admin/-/merge_requests/15", f"{ENDPOINT}/legacy/admin/-/merge_requests/3"),
     ),
     DemoIssue(key="SHOP-45", summary="Pick the dark palette with design", status="To Do", category="new"),
     DemoIssue(key="SHOP-46", summary="Dark mode in emails", status="To Do", category="new", parent="SHOP-36"),
