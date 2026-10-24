@@ -126,6 +126,7 @@
   .issue-row:hover { background: color-mix(in srgb, var(--accent) 5%, transparent); }
   .issue-row.chosen { background: color-mix(in srgb, var(--accent) 10%, transparent); }
   .issue-row code { font-weight: 500; }
+  .gaps ul { margin: 4px 0 12px; padding-left: 18px; }
   .issue-row .summary { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .issue-row .reach { grid-column: 3 / -1; display: flex; gap: 4px; overflow: hidden; white-space: nowrap; }
   .rider-mark { padding: 0 6px; border: 1px dashed var(--warn); border-radius: 999px; color: var(--warn); font-size: 11px; white-space: nowrap; }
@@ -284,8 +285,9 @@
                       </td>
                       <td>
                         <template x-for="key in row.jira_keys" :key="key.key">
-                          <div>
+                          <div class="row-key">
                             <a :href="key.url" x-text="key.key"></a>
+                            <span class="muted via" :title="t('viaTitle')" x-text="viaText(key)"></span>
                             <span x-show="issue(key.key)" :class="statusClass(issue(key.key))" x-text="issue(key.key) && issue(key.key).status"></span>
                             <span x-text="issue(key.key) ? issue(key.key).summary : ''"></span>
                           </div>
@@ -354,7 +356,7 @@
                 <label class="issue-row" :class="{ chosen: chosen.includes(key) }">
                   <input type="checkbox" :checked="chosen.includes(key)" @change="toggleIssue(key)">
                   <span class="dot" :class="'dot-' + (issue(key).status_category || 'new')" :title="issue(key).status"></span>
-                  <code x-text="key"></code>
+                  <code :title="relationsText(key)" x-text="key"></code>
                   <span class="summary" :title="issue(key).summary" x-text="issue(key).summary"></span>
                   <span class="rider-mark" :title="t('shipsAnywayTitle')" x-text="t('shipsAnyway')"
                     :style="{ visibility: shipsAnyway(key) ? 'visible' : 'hidden' }"></span>
@@ -374,6 +376,12 @@
       <p x-show="!pickable.length" class="muted" x-text="t('noCandidates')"></p>
       <p x-show="pickable.length && !picked.length" class="muted" x-text="t('pickToFill')"></p>
       <p x-show="copyFailed" class="warn" x-text="t('copyFailed')"></p>
+      <div class="gaps" x-show="picked.length && gaps.length">
+        <p class="warn" x-text="t('gapsTitle')"></p>
+        <ul>
+          <template x-for="gap in gaps" :key="gap"><li x-text="gap"></li></template>
+        </ul>
+      </div>
 
       <div class="outputs" x-show="picked.length">
         <div class="tabs">
@@ -394,6 +402,7 @@
                 <span x-show="task.issue" :class="statusClass(task.issue)" x-text="task.issue && task.issue.status"></span>
                 <span x-text="task.issue ? task.issue.summary : ''"></span>
                 <span x-show="isMissing(task.key)" class="warn" x-text="t('notInJira')"></span>
+                <span x-show="task.sources.length" class="muted sources" x-text="t('taskFrom', { items: task.sources.join(', ') })"></span>
               </li>
             </template>
           </ul>
@@ -551,6 +560,15 @@
       planAlso: "also ships",
       planNoTag: "{keys}: no tag yet.",
       planElsewhere: "{items}, nothing to pick",
+      groupRelated: "Related",
+      viaNamed: "named",
+      viaLinked: "linked",
+      viaTitle: "named: the merge request or commit mentions the key; linked: the Jira issue links to this change",
+      taskFrom: "from {items}",
+      gapsTitle: "Left behind by these picks:",
+      gapNeeds: "needs {tag}",
+      relationParent: "has parent",
+      relationSubtask: "has subtask",
     },
     ru: {
       language: "Язык",
@@ -651,6 +669,15 @@
       planAlso: "также войдут",
       planNoTag: "{keys}: тега ещё нет.",
       planElsewhere: "{items}, выбирать нечего",
+      groupRelated: "Связанные",
+      viaNamed: "в тексте",
+      viaLinked: "по ссылке",
+      viaTitle: "в тексте: ключ упомянут в MR или коммите; по ссылке: задача в Jira ссылается на это изменение",
+      taskFrom: "из {items}",
+      gapsTitle: "Не войдёт с этими тегами:",
+      gapNeeds: "нужен {tag}",
+      relationParent: "родитель",
+      relationSubtask: "подзадача",
     },
   };
 
@@ -881,12 +908,63 @@
       },
       get tasks() {
         const tasks = new Map();
-        for (const { candidate } of this.picked) {
+        for (const { service, candidate } of this.picked) {
+          const shipped = service.rows.slice(this.tagRow(service, candidate.tag.name)).filter((row) => row.in_scope);
           for (const key of candidate.jira_keys) {
-            if (!tasks.has(key.key)) tasks.set(key.key, { key: key.key, url: key.url, issue: this.issue(key.key) });
+            if (!tasks.has(key.key)) tasks.set(key.key, { key: key.key, url: key.url, issue: this.issue(key.key), sources: [] });
+            tasks.get(key.key).sources.push(
+              ...shipped
+                .filter((row) => row.jira_keys.some((item) => item.key === key.key))
+                .map((row) => `${this.shortName(service.project)} ${this.changeLabel(row)}`),
+            );
           }
         }
         return [...tasks.values()];
+      },
+      get gaps() {
+        const starts = new Map(this.picked.map(({ service, candidate }) => [service.project, this.tagRow(service, candidate.tag.name)]));
+        const gaps = new Set();
+        const check = (source, relation, key) => {
+          const via = relation ? ` ${this.relationLabel(relation)} ${key}` : "";
+          const reach = this.reach[key] || [];
+          for (const item of reach) {
+            const reason = this.gapReason(item, starts);
+            if (reason) gaps.add(`${source}${via} → ${this.shortName(item.project)}: ${reason}`);
+          }
+          const issue = this.issue(key);
+          if (relation && !reach.length && issue && issue.status_category !== "done") gaps.add(`${source}${via}: ${issue.status}`);
+        };
+        for (const task of this.tasks) {
+          check(task.key, null, task.key);
+          for (const relation of task.issue ? task.issue.relations : []) check(task.key, relation, relation.key);
+        }
+        return [...gaps];
+      },
+      gapReason(item, starts) {
+        if (item.state === "tag" || item.state === "untagged") {
+          const start = starts.get(item.project);
+          if (start !== undefined && start <= item.index) return "";
+          return item.state === "tag" ? this.t("gapNeeds", { tag: item.tag }) : this.t("reachUntagged");
+        }
+        return ["production", "older", "closed"].includes(item.state) ? "" : this.reachLabel(item);
+      },
+      tagRow(service, tag) {
+        return service.rows.findIndex((row) => row.tags.some((item) => item.name === tag));
+      },
+      changeLabel(row) {
+        return row.merge_requests.length ? row.merge_requests.map((item) => "!" + item.iid).join(" ") : row.commits[0].short_sha;
+      },
+      viaText(key) {
+        return key.via.map((source) => this.t(source === "named" ? "viaNamed" : "viaLinked")).join(", ");
+      },
+      relationLabel(relation) {
+        if (relation.kind === "parent") return this.t("relationParent");
+        if (relation.kind === "subtask") return this.t("relationSubtask");
+        return relation.label;
+      },
+      relationsText(key) {
+        const issue = this.issue(key);
+        return issue ? issue.relations.map((relation) => `${this.relationLabel(relation)} ${relation.key}`).join("\n") : "";
       },
       get taskKeys() {
         return this.tasks.map((task) => task.key).join("\n");
@@ -938,9 +1016,11 @@
             (!text || `${key} ${this.issue(key).summary}`.toLowerCase().includes(text)),
         );
         const done = (key) => this.issue(key).status_category === "done";
+        const related = (key) => this.issue(key).via_relation;
         return [
-          { name: "groupDone", keys: keys.filter(done) },
-          { name: "groupNotDone", keys: keys.filter((key) => !done(key)) },
+          { name: "groupDone", keys: keys.filter((key) => !related(key) && done(key)) },
+          { name: "groupNotDone", keys: keys.filter((key) => !related(key) && !done(key)) },
+          { name: "groupRelated", keys: keys.filter(related) },
         ].filter((group) => group.keys.length);
       },
       get plan() {
@@ -1023,7 +1103,7 @@
       },
       untickMissed(service) {
         const tag = this.picks[service.project];
-        const picked = tag ? service.rows.findIndex((row) => row.tags.some((item) => item.name === tag)) : -1;
+        const picked = tag ? this.tagRow(service, tag) : -1;
         const missed = this.chosen.filter((key) =>
           this.reach[key].some((item) => item.project === service.project && item.state === "tag" && (picked === -1 || picked > item.index)));
         if (!missed.length) return;

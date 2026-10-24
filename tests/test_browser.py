@@ -117,7 +117,7 @@ def test_demo_lists_its_services_and_picks_tags_for_an_issue(page: Page, demo_si
     names = page.locator("details.service .name")
     expect(names).to_have_text(["admin", "api", "web", "worker"])
     expect(names.first).to_have_attribute("title", "shop/admin")
-    expect(page.locator(".issue-row code")).to_have_count(6)
+    expect(page.locator(".issue-row code")).to_have_count(8)
     _issue(page, "SHOP-38").check()
     expect(page).to_have_url(re.compile(r"#issues=SHOP-38&shop/api=2\.5\.0&shop/web=1\.9\.0$"))
     assert errors == []
@@ -310,4 +310,70 @@ def test_demo_service_rows_line_up_with_and_without_a_pick(page: Page, demo_site
 
     assert names[0] == pytest.approx(names[1], abs=0.5)
     assert max(states) - min(states) < 0.5, states
+    assert errors == []
+
+
+def test_row_keys_say_whether_the_change_names_them_or_jira_links_them(
+    page: Page, site: str, errors: list[str]
+) -> None:
+    page.goto(site)
+
+    page.locator("details.service summary").click()
+
+    row_key: typing.Final = page.locator(".row-key", has=page.locator("a", has_text="SHOP-12")).first
+    expect(row_key.locator(".via")).to_have_text("named, linked")
+    expect(page.locator(".row-key", has=page.locator("a", has_text="SHOP-9")).locator(".via")).to_have_text("named")
+    assert errors == []
+
+
+def test_demo_a_hand_pick_lists_the_changes_it_leaves_behind(page: Page, demo_site: str, errors: list[str]) -> None:
+    page.goto(demo_site)
+    gaps: typing.Final = page.locator(".gaps li")
+
+    api: typing.Final = _demo_service(page, "shop/api")
+    api.locator("summary").click()
+    api.locator(".tag", has_text="2.5.0").get_by_role("button").click()
+
+    expect(gaps).to_have_text(
+        [
+            "SHOP-38 → web: needs 1.9.0",
+            "SHOP-38 → mobile: not in this report",
+            "SHOP-38 is blocked by SHOP-44 → admin: not merged",
+            "SHOP-35 → worker: needs 0.15.0",
+        ]
+    )
+    web: typing.Final = _demo_service(page, "shop/web")
+    web.locator("summary").click()
+    web.locator(".tag", has_text="1.9.0").get_by_role("button").click()
+    expect(gaps).to_have_text(
+        [
+            "SHOP-38 → mobile: not in this report",
+            "SHOP-38 is blocked by SHOP-44 → admin: not merged",
+            "SHOP-35 → worker: needs 0.15.0",
+            "SHOP-36 is blocked by SHOP-45: To Do",
+        ]
+    )
+    assert errors == []
+
+
+def test_demo_tasks_name_the_changes_that_bring_them(page: Page, demo_site: str, errors: list[str]) -> None:
+    page.goto(demo_site)
+
+    _issue(page, "SHOP-38").check()
+
+    task: typing.Final = page.locator(".outputs li", has=page.locator("a", has_text="SHOP-38"))
+    expect(task.locator(".sources")).to_have_text("from api !57, web !120")
+    expect(page.locator(".outputs li", has=page.locator("a", has_text="SHOP-35")).locator(".sources")).to_have_text(
+        "from api !55"
+    )
+    assert errors == []
+
+
+def test_demo_related_issues_have_their_own_group_and_relations_show_on_hover(
+    page: Page, demo_site: str, errors: list[str]
+) -> None:
+    page.goto(demo_site)
+
+    expect(page.locator(".issue-group")).to_have_text(["Done · 3", "Not done · 3", "Related · 2"])
+    expect(page.locator(".issue-row code", has_text="SHOP-38")).to_have_attribute("title", "is blocked by SHOP-44")
     assert errors == []

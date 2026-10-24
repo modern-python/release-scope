@@ -39,7 +39,8 @@ Opening a line shows:
 - a link to create the next tag on the head, when rows have no tag yet;
 - the rows, each with its tags and their pipelines, its merge requests or commits with when they were merged or
   committed, Jira keys with their status, the time each environment first ran it, and failed jobs. Rows out of scope
-  are dimmed.
+  are dimmed. Each Jira key says why the row carries it: `named` when the merge request or commit mentions it,
+  `linked` when the Jira issue links to the change, or both.
 
 Links open in a new tab, including the GitLab settings pages that warnings and errors point to.
 
@@ -57,7 +58,9 @@ starts from the release tags again.
 ## Choosing issues
 
 When the report has Jira issues, the **Issues** list at the top of the Release column picks tags from issues instead.
-It lists every issue in the report, Done first and the rest after, by Jira's status category. You can filter it by
+It lists every issue in the report, Done first and the rest after, by Jira's status category. Related issues, which
+the report holds only because another issue relates to them, come last in a group of their own. Hover over a key to
+see its relations, such as `is blocked by SHOP-44`. You can filter it by
 key or summary, or show only the chosen issues.
 
 Under each issue are the services it touches, each with one of:
@@ -96,11 +99,22 @@ The **Release** column sits next to the services and stays in view while they sc
 screen. While a service is open, the column folds into a strip with the number of picked tags and tasks, so the rows
 get the full width. Clicking the strip closes the service.
 
+Above the tabs, **Left behind by these picks** lists what the picked tags leave out for every Jira task they ship,
+and for every issue related to one:
+
+- a service where the task or related issue has changes that no pick covers, with the tag it needs or why there is
+  none: `no tag yet`, `not merged`, `merged into <branch>`, `in prod or not merged`, `not in this report`, or
+  `failed to collect`;
+- a related issue with no changes at all that is not done in Jira, with its status.
+
+Changes already in production and closed merge requests are not listed.
+
 It turns the picked tags into four tabs. Each has a copy button and a text box to copy from by hand, since browsers
 allow the copy button only over HTTPS.
 
 - **Jira tasks**: the keys of every in-scope row from each picked tag down to production, without duplicates, with
-  summary and a status badge: grey for to do, blue for in progress, green for done. Copy them one per line, or as a
+  summary, a status badge (grey for to do, blue for in progress, green for done), and the merge requests or commits
+  that bring each one, such as `from api !57, web !120`. Copy them one per line, or as a
   JQL `key in (...)` clause.
 - **Tag pipelines**: the pipeline of each picked tag, as a Markdown list.
 - **Compare**: a GitLab compare link per service from production to the picked tag, as a Markdown list. A service
