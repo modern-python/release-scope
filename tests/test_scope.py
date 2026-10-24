@@ -1,6 +1,7 @@
 import typing
 
 import httpware
+import httpx
 import pydantic
 import pytest
 import respx
@@ -15,9 +16,13 @@ from tests.payloads import (
     COMMITS,
     ENDPOINT,
     JIRA_ENDPOINT,
+    JIRA_ISSUE_API,
     SERVICE_API,
     TAGS,
     commit,
+    issue_link,
+    jira_issue,
+    jira_page,
     merge_request,
     remote_link,
 )
@@ -273,3 +278,24 @@ def test_a_failing_scoped_service_keeps_the_others(scoped: respx.Router) -> None
     error: typing.Final = _service(report).error
     assert error is not None
     assert error.text == "team/svc: GitLab returned 500 for merge requests."
+
+
+@pytest.mark.httpx2(assert_all_called=False)
+def test_related_issue_in_an_uncollected_project_adds_no_service(scoped: respx.Router) -> None:
+    blocked: typing.Final = issue_link("Blocks", "is blocked by", "blocks", inward_issue="SHOP-200")
+    scoped["jira_search"].side_effect = [
+        httpx.Response(200, json=jira_page(jira_issue("SHOP-12", "New endpoint", issuelinks=[blocked]))),
+        httpx.Response(200, json=jira_page()),
+        httpx.Response(200, json=jira_page(jira_issue("SHOP-200", "Schema"))),
+    ]
+    scoped.get(f"{JIRA_ISSUE_API}/SHOP-200/remotelink").respond(
+        json=_links(f"{ENDPOINT}/team/other/-/merge_requests/7")
+    )
+
+    report: typing.Final = _scope()
+
+    assert "team/other" not in [item.project for item in report.services]
+    assert report.jira is not None
+    assert report.jira.issues["SHOP-200"].via_relation
+    assert [(item.project, item.state) for item in report.jira.issues["SHOP-200"].links] == [("team/other", None)]
+    assert scoped["jira_search"].call_count == 3

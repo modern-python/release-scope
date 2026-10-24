@@ -25,6 +25,11 @@ requests and commits linked to each issue. GitLab's Jira integration adds those 
 whenever a commit or merge request mentions it. A link counts only if it starts with `RELEASE_SCOPE_GITLAB__ENDPOINT`.
 The projects the links point to are the issue's related services.
 
+The same search returns each issue's relations: its Jira issue links with their type and direction, its parent, and
+its subtasks. Issues the report does not hold yet are read once more, with their GitLab links, and marked as related
+issues. Their own relations are recorded but not followed, and no project is collected for them. Relations to keys
+outside `RELEASE_SCOPE_JIRA_PROJECT_KEYS` are dropped.
+
 An issue also joins the Jira keys of every row its links point to. A key named only in a commit message inside a
 merge request still counts for that row and for the tags that ship it.
 

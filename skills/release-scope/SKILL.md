@@ -100,7 +100,10 @@ Read `$out/site/report.json` and answer the user's question from it, briefly.
 - `jira.issues` by key: `summary`, `status`, `status_category` (anything but `done` is not done), `links` to GitLab
   merge requests and commits. A merge request link into a collected service has `state` (`opened`, `closed`, `locked`,
   `merged`) and `target_branch`; `null` for commits, other projects, and unreadable merge requests. A merged link that
-  no row holds was merged before production, or below a cut range, or into another branch. `jira.missing` lists keys Jira did not return; `jira.error` a failed request, as a message. `jira` is
+  no row holds was merged before production, or below a cut range, or into another branch. `relations` lists Jira
+  issue links (`kind: link`, with `type`, `direction`, and `label` such as `is blocked by`), the `parent`, and
+  `subtask`s. An issue with `via_relation: true` is there only because another issue relates to it; its links into
+  projects outside the report have no state, so say its release there is unknown. `jira.missing` lists keys Jira did not return; `jira.error` a failed request, as a message. `jira` is
   `null` without a Jira token.
 - In a `--jira` report, `jira_scope` lists the issues, rows with `linked: true` are the ones the issues point to,
   rows with `in_scope: false` sit above the latest linked change and do not ship with the issues, and each service
