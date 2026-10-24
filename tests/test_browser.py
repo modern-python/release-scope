@@ -485,6 +485,30 @@ def test_demo_related_issues_have_their_own_group_and_relations_show_on_hover(
     assert errors == []
 
 
+def test_demo_left_behind_rows_stay_together_on_a_phone(page: Page, demo_site: str, errors: list[str]) -> None:
+    page.set_viewport_size({"width": 375, "height": 812})
+    page.goto(f"{demo_site}#shop/api=2.5.0&shop/web=1.9.0")
+    expect(page.locator(".gap-dep-head")).to_have_count(3)
+
+    layout: typing.Final = page.evaluate(
+        """() => ({
+            scroll: document.documentElement.scrollWidth,
+            summaries: [...document.querySelectorAll(".gap-head, .gap-dep-head")].map((row) => {
+                const key = row.querySelector("a").getBoundingClientRect();
+                return row.querySelector(".gap-summary").getBoundingClientRect().top < key.bottom;
+            }),
+            badges: [...document.querySelectorAll(".gap-dep-head > .status")].map((badge) => {
+                const row = badge.parentElement;
+                const end = row.getBoundingClientRect().right - parseFloat(getComputedStyle(row).paddingRight);
+                return Math.abs(badge.getBoundingClientRect().right - end) < 1;
+            }),
+        })"""
+    )
+
+    assert layout == {"scroll": 375, "summaries": [True] * 6, "badges": [True, True]}
+    assert errors == []
+
+
 def test_demo_left_behind_list_reads_in_russian(page: Page, demo_site: str, errors: list[str]) -> None:
     page.goto(demo_site)
     _pick_by_hand(page, "shop/api", "2.5.0")
@@ -496,4 +520,8 @@ def test_demo_left_behind_list_reads_in_russian(page: Page, demo_site: str, erro
     expect(page.locator(".gap-line", has_text="worker")).to_have_text("worker нужен тег 0.15.0 Выбрать 0.15.0")
     expect(page.locator(".gap-dep-head").last).to_have_text("включает подзадачу SHOP-46 Dark mode in emails To Do")
     expect(page.get_by_role("button", name="Выбрать 1 нужный тег")).to_be_visible()
+    page.get_by_role("button", name="Пост о релизе").click()  # noqa: RUF001
+    expect(page.locator("textarea[rows='16']")).to_have_value(
+        re.compile(r"\n\n\*\*Не войдёт в релиз \(3\)\*\*\n- \[SHOP-38\]")  # noqa: RUF001
+    )
     assert errors == []
