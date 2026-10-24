@@ -16,7 +16,8 @@ Times show in the browser's time zone. Hover over one to see the value the repor
 
 ## Services
 
-Each service is one line, named without the group path all services share, such as `api` for `shop/api`.
+Each service is one line, named by its repository, such as `api` for `shop/api`. When two projects on the page share
+a name, each keeps as many parent groups as it takes to tell them apart, such as `shop/admin` and `legacy/admin`.
 Hover over a name to see the full path. It shows:
 
 - what production runs and the picked tag;
@@ -99,13 +100,20 @@ The **Release** column sits next to the services and stays in view while they sc
 screen. While a service is open, the column folds into a strip with the number of picked tags and tasks, so the rows
 get the full width. Clicking the strip closes the service.
 
-Above the tabs, **Left behind by these picks** lists what the picked tags leave out for every Jira task they ship,
-and for every issue a task depends on: one that blocks it through Jira's `Blocks` link type, and its subtasks.
+Above the tabs, **Left behind by these picks** lists what the picked tags leave out, grouped by each Jira task they
+ship. A group opens with the task's key, linked to Jira, and its summary. Under it come the services the task still
+misses, then each issue the task depends on: one that blocks it through Jira's `Blocks` link type, and its subtasks.
+Those issues show their key and summary too, and the services they miss sit under them.
 
 - a service where the task or an issue it depends on has changes that no pick covers, with the tag it needs or why
   there is none: `no tag yet`, `not merged`, `merged into <branch>`, `in prod or not merged`, `not in this report`, or
   `failed to collect`;
 - an issue the task depends on with no changes at all that is not done in Jira, with its status.
+
+A service that needs a tag has a **Pick** button for it, which picks the tag without opening the service. `no tag yet`
+links to create the next tag, and `not merged`, `merged into <branch>`, and `in prod or not merged` link to the merge
+requests or commits. When any line needs a tag, a button next to the title picks every needed tag at once, the newest
+one per service. A newer pick can ship more tasks, and the list then shows what those leave behind.
 
 Changes already in production and closed merge requests are not listed. Other relations, such as `blocks`,
 `relates to`, or a parent, do not hold a release back; they show only when you hover over the issue's key.
