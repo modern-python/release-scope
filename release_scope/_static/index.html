@@ -183,7 +183,7 @@
           :class="{ deployed: deployed(service), involved: planOf(service), idle: chosen.length && !planOf(service) }"
           @toggle="openCount = document.querySelectorAll('details.service[open]').length">
           <summary>
-            <span class="name" x-text="service.project"></span>
+            <span class="name" :title="service.project" x-text="shortName(service.project)"></span>
             <span x-show="service.error" class="bad" x-text="t('failedToCollect')"></span>
             <span x-show="!service.error">
               <span class="muted prod" x-text="productionRef(service) + ' →'"></span>
@@ -322,7 +322,7 @@
       </template>
       <template x-for="entry in unlisted" :key="entry.project">
         <div class="service unlisted">
-          <b x-text="entry.project"></b>
+          <b :title="entry.project" x-text="shortName(entry.project)"></b>
           <span class="cell cell-outside" x-text="t('notInReport')"></span>
           <span class="muted" x-text="t('linkedTo')"></span>
           <template x-for="key in entry.keys" :key="key"><span class="key" x-text="key"></span></template>
@@ -851,6 +851,18 @@
       },
       get listed() {
         return this.report.services.filter((service) => service.error || this.production(service) || service.rows.length);
+      },
+      get sharedPrefix() {
+        const paths = this.listed.map((service) => service.project.split("/"));
+        if (paths.length < 2) return "";
+        const shared = paths.reduce((prefix, parts) => {
+          const end = prefix.findIndex((part, index) => part !== parts[index] || index >= parts.length - 1);
+          return end === -1 ? prefix : prefix.slice(0, end);
+        });
+        return shared.length ? shared.join("/") + "/" : "";
+      },
+      shortName(project) {
+        return this.sharedPrefix && project.startsWith(this.sharedPrefix) ? project.slice(this.sharedPrefix.length) : project;
       },
       get pickable() {
         return this.listed.filter((service) => service.candidates.length);

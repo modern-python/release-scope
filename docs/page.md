@@ -16,7 +16,8 @@ Times show in the browser's time zone. Hover over one to see the value the repor
 
 ## Services
 
-Each service is one line. It shows:
+Each service is one line, named without the group path all services share, such as `api` for `shop/api`.
+Hover over a name to see the full path. It shows:
 
 - what production runs and the picked tag;
 - how many merge requests or commits and Jira tasks the pick ships;

@@ -114,7 +114,9 @@ def test_russian_page_has_no_untranslated_placeholders(page: Page, site: str, er
 def test_demo_lists_its_services_and_picks_tags_for_an_issue(page: Page, demo_site: str, errors: list[str]) -> None:
     page.goto(demo_site)
 
-    expect(page.locator("details.service .name")).to_have_text(["shop/admin", "shop/api", "shop/web", "shop/worker"])
+    names = page.locator("details.service .name")
+    expect(names).to_have_text(["admin", "api", "web", "worker"])
+    expect(names.first).to_have_attribute("title", "shop/admin")
     expect(page.locator(".issue-row code")).to_have_count(6)
     _issue(page, "SHOP-38").check()
     expect(page).to_have_url(re.compile(r"#issues=SHOP-38&shop/api=2\.5\.0&shop/web=1\.9\.0$"))
@@ -172,7 +174,7 @@ def test_an_address_with_an_older_pick_unticks_the_issues_it_misses(page: Page, 
 
 
 def _demo_service(page: Page, project: str) -> Locator:
-    return page.locator("details.service", has=page.locator(".name", has_text=project))
+    return page.locator("details.service", has=page.locator(f'.name[title="{project}"]'))
 
 
 def test_demo_clearing_one_service_pick_unticks_the_issue_in_every_service(
