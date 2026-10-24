@@ -675,10 +675,10 @@
       viaJira: "через Jira",
       viaJiraTitle: "{change} не упоминает задачу. {key} ссылается на это изменение в Jira.",
       taskFrom: "из {items}",
-      gapsTitle: "Не войдёт с этими тегами:",
-      gapNeeds: "нужен {tag}",
-      relationParent: "родитель",
-      relationSubtask: "подзадача",
+      gapsTitle: "Не войдёт в релиз с выбранными тегами:",
+      gapNeeds: "нужен тег {tag}",
+      relationParent: "входит в",
+      relationSubtask: "включает подзадачу",
     },
   };
 
@@ -743,6 +743,9 @@
   };
 
   const byKey = (a, b) => a.localeCompare(b, undefined, { numeric: true });
+
+  const dependsOn = (relation) =>
+    relation.kind === "subtask" || (relation.kind === "link" && relation.type === "Blocks" && relation.direction === "inward");
 
   const OUT_OF_RANGE = new Set(["production", "older", "open", "branch", "closed", "elsewhere"]);
 
@@ -937,7 +940,7 @@
         };
         for (const task of this.tasks) {
           check(task.key, null, task.key);
-          for (const relation of task.issue ? task.issue.relations : []) check(task.key, relation, relation.key);
+          for (const relation of task.issue ? task.issue.relations.filter(dependsOn) : []) check(task.key, relation, relation.key);
         }
         return [...gaps];
       },

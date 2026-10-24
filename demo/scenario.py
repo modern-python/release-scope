@@ -62,6 +62,9 @@ class DemoIssue:
     issue_type: str = "Story"
     links: tuple[str, ...] = ()
     blocked_by: tuple[str, ...] = ()
+    blocks: tuple[str, ...] = ()
+    parent: str | None = None
+    subtasks: tuple[str, ...] = ()
 
 
 SERVICES: typing.Final = (
@@ -199,6 +202,7 @@ ISSUES: typing.Final = (
         category="done",
         issue_type="Bug",
         links=(f"{ENDPOINT}/shop/worker/-/merge_requests/31",),
+        blocks=("SHOP-40",),
     ),
     DemoIssue(
         key="SHOP-36",
@@ -207,6 +211,7 @@ ISSUES: typing.Final = (
         category="indeterminate",
         links=(f"{ENDPOINT}/shop/api/-/merge_requests/40",),
         blocked_by=("SHOP-45",),
+        subtasks=("SHOP-46",),
     ),
     DemoIssue(
         key="SHOP-38",
@@ -242,6 +247,7 @@ ISSUES: typing.Final = (
         links=(f"{ENDPOINT}/shop/admin/-/merge_requests/15",),
     ),
     DemoIssue(key="SHOP-45", summary="Pick the dark palette with design", status="To Do", category="new"),
+    DemoIssue(key="SHOP-46", summary="Dark mode in emails", status="To Do", category="new", parent="SHOP-36"),
 )
 
 
@@ -392,6 +398,9 @@ def _mock_service(router: respx.Router, service: DemoService, now: dt.datetime) 
     router.get(f"{api}/pipelines", params={"source": "push"}).respond(json=push)
 
 
+_BLOCKS: typing.Final = {"name": "Blocks", "inward": "is blocked by", "outward": "blocks"}
+
+
 def _issue(issue: DemoIssue) -> dict[str, typing.Any]:
     return {
         "key": issue.key,
@@ -400,12 +409,11 @@ def _issue(issue: DemoIssue) -> dict[str, typing.Any]:
             "status": {"name": issue.status, "statusCategory": {"key": issue.category}},
             "issuetype": {"name": issue.issue_type},
             "issuelinks": [
-                {
-                    "type": {"name": "Blocks", "inward": "is blocked by", "outward": "blocks"},
-                    "inwardIssue": {"key": key},
-                }
-                for key in issue.blocked_by
+                *({"type": _BLOCKS, "inwardIssue": {"key": key}} for key in issue.blocked_by),
+                *({"type": _BLOCKS, "outwardIssue": {"key": key}} for key in issue.blocks),
             ],
+            "parent": {"key": issue.parent} if issue.parent else None,
+            "subtasks": [{"key": key} for key in issue.subtasks],
         },
     }
 

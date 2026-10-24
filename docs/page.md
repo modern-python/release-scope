@@ -100,14 +100,15 @@ screen. While a service is open, the column folds into a strip with the number o
 get the full width. Clicking the strip closes the service.
 
 Above the tabs, **Left behind by these picks** lists what the picked tags leave out for every Jira task they ship,
-and for every issue related to one:
+and for every issue a task depends on: one that blocks it through Jira's `Blocks` link type, and its subtasks.
 
-- a service where the task or related issue has changes that no pick covers, with the tag it needs or why there is
-  none: `no tag yet`, `not merged`, `merged into <branch>`, `in prod or not merged`, `not in this report`, or
+- a service where the task or an issue it depends on has changes that no pick covers, with the tag it needs or why
+  there is none: `no tag yet`, `not merged`, `merged into <branch>`, `in prod or not merged`, `not in this report`, or
   `failed to collect`;
-- a related issue with no changes at all that is not done in Jira, with its status.
+- an issue the task depends on with no changes at all that is not done in Jira, with its status.
 
-Changes already in production and closed merge requests are not listed.
+Changes already in production and closed merge requests are not listed. Other relations, such as `blocks`,
+`relates to`, or a parent, do not hold a release back; they show only when you hover over the issue's key.
 
 It turns the picked tags into four tabs. Each has a copy button and a text box to copy from by hand, since browsers
 allow the copy button only over HTTPS.
