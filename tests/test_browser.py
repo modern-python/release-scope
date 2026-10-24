@@ -313,16 +313,20 @@ def test_demo_service_rows_line_up_with_and_without_a_pick(page: Page, demo_site
     assert errors == []
 
 
-def test_row_keys_say_whether_the_change_names_them_or_jira_links_them(
-    page: Page, site: str, errors: list[str]
+def test_demo_only_a_key_the_change_does_not_mention_is_marked_as_via_jira(
+    page: Page, demo_site: str, errors: list[str]
 ) -> None:
-    page.goto(site)
+    page.goto(demo_site)
 
-    page.locator("details.service summary").click()
+    api: typing.Final = _demo_service(page, "shop/api")
+    api.locator("summary").click()
 
-    row_key: typing.Final = page.locator(".row-key", has=page.locator("a", has_text="SHOP-12")).first
-    expect(row_key.locator(".via")).to_have_text("named, linked")
-    expect(page.locator(".row-key", has=page.locator("a", has_text="SHOP-9")).locator(".via")).to_have_text("named")
+    linked: typing.Final = api.locator(".row-key.via-jira")
+    expect(linked).to_have_count(1)
+    expect(linked.locator("a")).to_have_text("SHOP-33")
+    expect(linked.locator(".via")).to_have_text("via Jira")
+    expect(linked).to_have_attribute("title", "Not mentioned in !54. SHOP-33 links to it in Jira.")
+    expect(api.locator(".row-key", has=page.locator("a", has_text="SHOP-38")).locator(".via")).to_be_hidden()
     assert errors == []
 
 

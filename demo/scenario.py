@@ -190,7 +190,7 @@ ISSUES: typing.Final = (
         summary="Search products by SKU",
         status="Ready for release",
         category="done",
-        links=(f"{ENDPOINT}/shop/web/-/merge_requests/99",),
+        links=(f"{ENDPOINT}/shop/web/-/merge_requests/99", f"{ENDPOINT}/shop/api/-/merge_requests/54"),
     ),
     DemoIssue(
         key="SHOP-35",
