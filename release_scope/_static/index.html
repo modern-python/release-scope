@@ -127,6 +127,8 @@
   .issue-row.chosen { background: color-mix(in srgb, var(--accent) 10%, transparent); }
   .issue-row code { font-weight: 500; }
   .gaps ul { margin: 4px 0 12px; padding-left: 18px; }
+  .row-key.via-jira > a { text-decoration: underline dashed; text-underline-offset: 3px; }
+  .link-icon { width: 13px; height: 13px; margin-right: 2px; vertical-align: -2px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
   .issue-row .summary { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .issue-row .reach { grid-column: 3 / -1; display: flex; gap: 4px; overflow: hidden; white-space: nowrap; }
   .rider-mark { padding: 0 6px; border: 1px dashed var(--warn); border-radius: 999px; color: var(--warn); font-size: 11px; white-space: nowrap; }
@@ -285,9 +287,10 @@
                       </td>
                       <td>
                         <template x-for="key in row.jira_keys" :key="key.key">
-                          <div class="row-key">
+                          <div class="row-key" :class="{ 'via-jira': viaJira(key) }"
+                            :title="viaJira(key) ? t('viaJiraTitle', { change: changeLabel(row), key: key.key }) : ''">
                             <a :href="key.url" x-text="key.key"></a>
-                            <span class="muted via" :title="t('viaTitle')" x-text="viaText(key)"></span>
+                            <span x-show="viaJira(key)" class="muted via"><svg class="link-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 15l6-6"/><path d="M11 6l.46-.54a5 5 0 0 1 7.07 7.07L18 13"/><path d="M13 18l-.4.53a5 5 0 0 1-7.07-7.07L6 11"/></svg><span x-text="t('viaJira')"></span></span>
                             <span x-show="issue(key.key)" :class="statusClass(issue(key.key))" x-text="issue(key.key) && issue(key.key).status"></span>
                             <span x-text="issue(key.key) ? issue(key.key).summary : ''"></span>
                           </div>
@@ -561,9 +564,8 @@
       planNoTag: "{keys}: no tag yet.",
       planElsewhere: "{items}, nothing to pick",
       groupRelated: "Related",
-      viaNamed: "named",
-      viaLinked: "linked",
-      viaTitle: "named: the merge request or commit mentions the key; linked: the Jira issue links to this change",
+      viaJira: "via Jira",
+      viaJiraTitle: "Not mentioned in {change}. {key} links to it in Jira.",
       taskFrom: "from {items}",
       gapsTitle: "Left behind by these picks:",
       gapNeeds: "needs {tag}",
@@ -670,9 +672,8 @@
       planNoTag: "{keys}: тега ещё нет.",
       planElsewhere: "{items}, выбирать нечего",
       groupRelated: "Связанные",
-      viaNamed: "в тексте",
-      viaLinked: "по ссылке",
-      viaTitle: "в тексте: ключ упомянут в MR или коммите; по ссылке: задача в Jira ссылается на это изменение",
+      viaJira: "через Jira",
+      viaJiraTitle: "{change} не упоминает задачу. {key} ссылается на это изменение в Jira.",
       taskFrom: "из {items}",
       gapsTitle: "Не войдёт с этими тегами:",
       gapNeeds: "нужен {tag}",
@@ -954,8 +955,8 @@
       changeLabel(row) {
         return row.merge_requests.length ? row.merge_requests.map((item) => "!" + item.iid).join(" ") : row.commits[0].short_sha;
       },
-      viaText(key) {
-        return key.via.map((source) => this.t(source === "named" ? "viaNamed" : "viaLinked")).join(", ");
+      viaJira(key) {
+        return !key.via.includes("named");
       },
       relationLabel(relation) {
         if (relation.kind === "parent") return this.t("relationParent");

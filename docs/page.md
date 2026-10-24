@@ -39,8 +39,8 @@ Opening a line shows:
 - a link to create the next tag on the head, when rows have no tag yet;
 - the rows, each with its tags and their pipelines, its merge requests or commits with when they were merged or
   committed, Jira keys with their status, the time each environment first ran it, and failed jobs. Rows out of scope
-  are dimmed. Each Jira key says why the row carries it: `named` when the merge request or commit mentions it,
-  `linked` when the Jira issue links to the change, or both.
+  are dimmed. A key the merge request or commit does not mention, which the row carries only because the Jira
+  issue links to the change, is underlined with a dashed line and marked `via Jira`; hover over it for the reason.
 
 Links open in a new tab, including the GitLab settings pages that warnings and errors point to.
 
