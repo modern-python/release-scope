@@ -35,9 +35,12 @@ One row, trimmed:
   "tags": [{"name": "1.2.0", "url": "...", "pipeline": {"id": 201, "status": "success", "failed_jobs": []}}],
   "merge_requests": [{"iid": 12, "title": "SHOP-12 new endpoint", "url": "..."}],
   "commits": [{"sha": "c3...", "title": "Merge branch 'feature/SHOP-12'"}],
-  "jira_keys": [{"key": "SHOP-12", "url": "https://jira.example.com/browse/SHOP-12"}],
+  "jira_keys": [{"key": "SHOP-12", "url": "https://jira.example.com/browse/SHOP-12", "via": ["named", "linked"]}],
   "environments": ["preview"],
   "first_deployed_at": {"preview": "2026-09-22T00:00:00Z"},
   "main_pipeline": {"id": 103, "status": "failed", "failed_jobs": [{"kind": "job", "name": "lint", "allow_failure": false}]}
 }
 ```
+
+A Jira key's `via` says why the row carries it: `named` when the merge request or commit text names it, `linked`
+when the issue's GitLab links point into the row, or both. A candidate's keys merge `via` across the rows it ships.

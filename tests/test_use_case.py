@@ -359,6 +359,25 @@ def test_issue_linked_to_a_merge_request_joins_its_row_and_the_candidates_shippi
     ]
 
 
+def test_row_keys_record_whether_text_names_them_or_jira_links_them(jira: respx.Router) -> None:
+    jira["jira_search"].respond(json=jira_page(*JIRA_ISSUES, jira_issue("SHOP-13", "Docs")))
+    jira.get(f"{JIRA_ISSUE_API}/SHOP-13/remotelink").respond(
+        json=[remote_link(f"{ENDPOINT}/team/svc/-/merge_requests/11")]
+    )
+
+    service: typing.Final = _only_service(_collect(with_jira=True))
+
+    assert [[(key.key, key.via) for key in row.jira_keys] for row in service.rows[:3]] == [
+        [("SHOP-9", ["named"])],
+        [("SHOP-12", ["named", "linked"]), ("SHOP-13", ["named"])],
+        [("SHOP-13", ["linked"])],
+    ]
+    assert [(key.key, key.via) for key in service.candidates[0].jira_keys] == [
+        ("SHOP-12", ["named", "linked"]),
+        ("SHOP-13", ["named", "linked"]),
+    ]
+
+
 @pytest.mark.httpx2(assert_all_called=False)
 def test_issue_linked_to_a_commit_joins_the_row_holding_it(jira: respx.Router) -> None:
     jira["commits"].respond(json=[commit("abcdef1234", "Hotfix", date="2026-09-25T00:00:00Z"), *COMMITS[1:]])
