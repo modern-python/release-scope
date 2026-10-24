@@ -340,6 +340,7 @@ def test_demo_names_a_service_by_its_repo_and_keeps_the_group_only_when_two_shar
     outside: typing.Final = page.locator(".service.unlisted b")
     expect(outside).to_have_text(["mobile"])
     expect(outside).to_have_attribute("title", "partners/mobile")
+    expect(outside.get_by_role("link")).to_have_attribute("href", "https://gitlab.example.com/partners/mobile")
     expect(page.locator(".issue-row", has=page.locator("code", has_text="SHOP-44")).locator(".cell")).to_have_text(
         ["shop/admin not merged", "legacy/admin not in this report"]
     )
@@ -374,6 +375,9 @@ def test_demo_a_hand_pick_lists_what_it_leaves_behind_under_each_task(
         ]
     )
     expect(export.locator(".gap-dep-head")).to_have_text(["is blocked by SHOP-44 Only managers may export orders"])
+    expect(export.get_by_role("link", name="mobile")).to_have_attribute(
+        "href", "https://gitlab.example.com/partners/mobile"
+    )
     expect(export.get_by_role("link", name="!15")).to_have_attribute(
         "href", "https://gitlab.example.com/shop/admin/-/merge_requests/15"
     )
@@ -444,10 +448,10 @@ def test_demo_release_post_lists_what_the_picks_leave_behind(page: Page, demo_si
             re.escape(
                 "\n\n**Left behind (3)**\n"
                 "- [SHOP-38](https://jira.example.com/browse/SHOP-38) Export orders as CSV\n"
-                "  - partners/mobile: not in this report\n"
+                "  - [partners/mobile](https://gitlab.example.com/partners/mobile): not in this report\n"
                 "  - is blocked by [SHOP-44](https://jira.example.com/browse/SHOP-44) Only managers may export orders\n"
                 "    - shop/admin: not merged [!15](https://gitlab.example.com/shop/admin/-/merge_requests/15)\n"
-                "    - legacy/admin: not in this report\n"
+                "    - [legacy/admin](https://gitlab.example.com/legacy/admin): not in this report\n"
                 "- [SHOP-35]"
             )
         )

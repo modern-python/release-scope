@@ -134,6 +134,8 @@
   .gap-dep-head, .gap-line { padding-left: 16px; }
   .gap-line.nested { padding-left: 32px; }
   .gap-line button { padding: 0 8px; font-size: 12px; }
+  .gap-summary { flex: 1 1 0; min-width: 8em; }
+  .gap-dep-head > .status { margin-left: auto; }
   .row-key.via-jira > a { text-decoration: underline dashed; text-underline-offset: 3px; }
   .link-icon { width: 13px; height: 13px; margin-right: 2px; vertical-align: -2px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
   .issue-row .summary { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -334,7 +336,7 @@
       </template>
       <template x-for="entry in unlisted" :key="entry.project">
         <div class="service unlisted">
-          <b :title="entry.project" x-text="shortName(entry.project)"></b>
+          <b :title="entry.project"><a :href="entry.url" x-text="shortName(entry.project)"></a></b>
           <span class="cell cell-outside" x-text="t('notInReport')"></span>
           <span class="muted" x-text="t('linkedTo')"></span>
           <template x-for="key in entry.keys" :key="key"><span class="key" x-text="key"></span></template>
@@ -394,7 +396,7 @@
             <div class="gap-head">
               <span class="dot" :class="'dot-' + (task.issue ? task.issue.status_category : 'new')" :title="task.issue && task.issue.status"></span>
               <a :href="task.url" x-text="task.key"></a>
-              <span x-text="task.issue ? task.issue.summary : ''"></span>
+              <span class="gap-summary" x-text="task.issue ? task.issue.summary : ''"></span>
             </div>
             <template x-for="(item, index) in gapRows(task)" :key="index">
               <div>
@@ -403,7 +405,7 @@
                     <span class="muted" x-text="relationLabel(item.dep.relation)"></span>
                     <span class="dot" :class="'dot-' + (item.dep.issue.status_category || 'new')" :title="item.dep.issue.status"></span>
                     <a :href="item.dep.issue.url" x-text="item.dep.key"></a>
-                    <span class="muted" x-text="item.dep.issue.summary"></span>
+                    <span class="muted gap-summary" x-text="item.dep.issue.summary"></span>
                     <template x-if="!item.dep.lines.length">
                       <span :class="statusClass(item.dep.issue)" x-text="item.dep.issue.status"></span>
                     </template>
@@ -411,7 +413,12 @@
                 </template>
                 <template x-if="item.line">
                   <div class="gap-line" :class="{ nested: item.nested }">
-                    <span :title="item.line.project" x-text="shortName(item.line.project)"></span>
+                    <template x-if="item.line.url">
+                      <a :href="item.line.url" :title="item.line.project" x-text="shortName(item.line.project)"></a>
+                    </template>
+                    <template x-if="!item.line.url">
+                      <span :title="item.line.project" x-text="shortName(item.line.project)"></span>
+                    </template>
                     <span class="cell" :class="'cell-' + (item.line.state === 'tag' ? 'untagged' : item.line.state)" x-text="item.line.reason"></span>
                     <template x-if="item.line.state === 'tag'">
                       <button type="button" @click="pickGap(item.line)" x-text="t('gapPick', { tag: item.line.tag })"></button>
@@ -864,8 +871,8 @@
       }
     }
     for (const [key, issue] of Object.entries(issues)) {
-      const outside = new Set(issue.links.map((link) => link.project).filter((project) => !projects.has(project)));
-      for (const project of outside) reach[key].push({ project, state: "outside" });
+      const outside = new Map(issue.links.filter((link) => !projects.has(link.project)).map((link) => [link.project, link.project_url]));
+      for (const [project, url] of outside) reach[key].push({ project, state: "outside", url });
     }
     return reach;
   };
@@ -899,7 +906,7 @@
           const report = await response.json();
           for (const service of report.services) {
             const tag = service.release && service.release.tag ? service.release.tag.name : "";
-            this.picks[service.project] = service.candidates.some((item) => item.tag.name === tag) ? tag : "";
+            this.picks[service.project] = this.candidateOf(service, tag) ? tag : "";
           }
           this.reach = reachOf(report);
           this.names = namesOf(report);
@@ -973,7 +980,7 @@
         return this.pickable
           .map((service) => ({
             service,
-            candidate: service.candidates.find((item) => item.tag.name === picks[service.project]),
+            candidate: this.candidateOf(service, picks[service.project]),
           }))
           .filter((item) => item.candidate);
       },
@@ -1114,7 +1121,7 @@
       },
       postGap(task) {
         const line = (item, indent) =>
-          `${indent}- ${item.project}: ${[item.reason, ...this.gapChanges(item).map((change) => `[${change.label}](${change.url})`)].join(" ")}`;
+          `${indent}- ${item.url ? `[${item.project}](${item.url})` : item.project}: ${[item.reason, ...this.gapChanges(item).map((change) => `[${change.label}](${change.url})`)].join(" ")}`;
         return [
           `- [${task.key}](${task.url})${task.issue ? " " + task.issue.summary : ""}`,
           ...task.lines.map((item) => line(item, "  ")),
@@ -1153,7 +1160,7 @@
         for (const key of this.chosen) {
           for (const item of this.reach[key]) {
             if (!plan.has(item.project)) {
-              plan.set(item.project, { project: item.project, state: item.state, keys: [], best: null, untagged: [], elsewhere: [] });
+              plan.set(item.project, { project: item.project, state: item.state, url: item.url, keys: [], best: null, untagged: [], elsewhere: [] });
             }
             const entry = plan.get(item.project);
             entry.keys.push(key);
@@ -1259,7 +1266,7 @@
         if (wanted.size) {
           for (const service of this.pickable) {
             const tag = wanted.get(service.project) || "";
-            const known = !tag || service.candidates.some((item) => item.tag.name === tag);
+            const known = !tag || this.candidateOf(service, tag);
             this.picks[service.project] = known ? tag : "";
             if (known) wanted.delete(service.project);
           }
@@ -1278,7 +1285,10 @@
         history.replaceState(null, "", hash ? `#${hash}` : location.pathname + location.search);
       },
       pickOf(service) {
-        return service.candidates.find((item) => item.tag.name === this.picks[service.project]);
+        return this.candidateOf(service, this.picks[service.project]);
+      },
+      candidateOf(service, tag) {
+        return service.candidates.find((item) => item.tag.name === tag);
       },
       pickHint(service) {
         return service.candidates.length ? this.t("pickTag") : "";
