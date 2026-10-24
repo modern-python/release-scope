@@ -417,6 +417,47 @@ def test_demo_picking_every_needed_tag_at_once(page: Page, demo_site: str, error
     assert errors == []
 
 
+def test_demo_picking_every_needed_tag_also_picks_what_those_tags_need(
+    page: Page, demo_site: str, errors: list[str]
+) -> None:
+    page.goto(demo_site)
+    _pick_by_hand(page, "shop/web", "1.9.0")
+
+    page.get_by_role("button", name="Pick 2 needed tags").click()
+
+    expect(_demo_service(page, "shop/api").locator(".chip > span")).to_have_text("2.5.0")
+    expect(_demo_service(page, "shop/worker").locator(".chip > span")).to_have_text("0.15.0")
+    expect(page.locator(".gaps > p button")).to_be_hidden()
+    assert errors == []
+
+
+def test_demo_release_post_lists_what_the_picks_leave_behind(page: Page, demo_site: str, errors: list[str]) -> None:
+    page.goto(demo_site)
+    _pick_by_hand(page, "shop/api", "2.5.0")
+    _pick_by_hand(page, "shop/web", "1.9.0")
+
+    page.get_by_role("button", name="Release post").click()
+
+    post: typing.Final = page.locator("section", has=page.get_by_role("button", name="Copy")).locator("textarea").last
+    expect(post).to_have_value(
+        re.compile(
+            re.escape(
+                "\n\n**Left behind (3)**\n"
+                "- [SHOP-38](https://jira.example.com/browse/SHOP-38) Export orders as CSV\n"
+                "  - partners/mobile: not in this report\n"
+                "  - is blocked by [SHOP-44](https://jira.example.com/browse/SHOP-44) Only managers may export orders\n"
+                "    - shop/admin: not merged [!15](https://gitlab.example.com/shop/admin/-/merge_requests/15)\n"
+                "    - legacy/admin: not in this report\n"
+                "- [SHOP-35]"
+            )
+        )
+    )
+    expect(post).to_have_value(
+        re.compile(r"  - is blocked by \[SHOP-45\]\(\S+\) Pick the dark palette with design: To Do\n")
+    )
+    assert errors == []
+
+
 def test_demo_tasks_name_the_changes_that_bring_them(page: Page, demo_site: str, errors: list[str]) -> None:
     page.goto(demo_site)
 
