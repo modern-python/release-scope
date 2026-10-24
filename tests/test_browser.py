@@ -117,7 +117,7 @@ def test_demo_lists_its_services_and_picks_tags_for_an_issue(page: Page, demo_si
     names = page.locator("details.service .name")
     expect(names).to_have_text(["admin", "api", "web", "worker"])
     expect(names.first).to_have_attribute("title", "shop/admin")
-    expect(page.locator(".issue-row code")).to_have_count(8)
+    expect(page.locator(".issue-row code")).to_have_count(9)
     _issue(page, "SHOP-38").check()
     expect(page).to_have_url(re.compile(r"#issues=SHOP-38&shop/api=2\.5\.0&shop/web=1\.9\.0$"))
     assert errors == []
@@ -355,6 +355,7 @@ def test_demo_a_hand_pick_lists_the_changes_it_leaves_behind(page: Page, demo_si
             "SHOP-38 is blocked by SHOP-44 → admin: not merged",
             "SHOP-35 → worker: needs 0.15.0",
             "SHOP-36 is blocked by SHOP-45: To Do",
+            "SHOP-36 has subtask SHOP-46: To Do",
         ]
     )
     assert errors == []
@@ -378,6 +379,25 @@ def test_demo_related_issues_have_their_own_group_and_relations_show_on_hover(
 ) -> None:
     page.goto(demo_site)
 
-    expect(page.locator(".issue-group")).to_have_text(["Done · 3", "Not done · 3", "Related · 2"])
+    expect(page.locator(".issue-group")).to_have_text(["Done · 3", "Not done · 3", "Related · 3"])
     expect(page.locator(".issue-row code", has_text="SHOP-38")).to_have_attribute("title", "is blocked by SHOP-44")
+    assert errors == []
+
+
+def test_demo_left_behind_list_reads_in_russian(page: Page, demo_site: str, errors: list[str]) -> None:
+    page.goto(demo_site)
+    for project, tag in (("shop/api", "2.5.0"), ("shop/web", "1.9.0")):
+        service = _demo_service(page, project)
+        service.locator("summary").click()
+        service.locator(".tag", has_text=tag).get_by_role("button").click()
+
+    page.get_by_role("combobox").first.select_option("ru")
+
+    expect(page.locator(".gaps p")).to_have_text("Не войдёт в релиз с выбранными тегами:")  # noqa: RUF001
+    expect(page.locator(".gaps li")).to_contain_text(
+        [
+            "SHOP-35 → worker: нужен тег 0.15.0",
+            "SHOP-36 включает подзадачу SHOP-46: To Do",
+        ]
+    )
     assert errors == []
