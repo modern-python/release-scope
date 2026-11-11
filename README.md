@@ -168,6 +168,8 @@ The agent reads the same environment variables as the CLI, so set them first. Th
 - [PyPI](https://pypi.org/project/release-scope)
 - [License](https://github.com/modern-python/release-scope/blob/main/LICENSE)
 
+If this project saves you time, consider giving it a star on GitHub.
+
 ## Part of `modern-python`
 
 Browse the full list of templates and libraries in
